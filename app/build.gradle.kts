@@ -21,14 +21,28 @@ android {
 
     signingConfigs {
         create("release") {
-            // Self-signed key for producing an installable, shrunk release APK.
-            // Replace with your own keystore for Play Store distribution.
-            val ksFile = rootProject.file("release.keystore")
-            if (ksFile.exists()) {
-                storeFile = ksFile
-                storePassword = "uts12345"
-                keyAlias = "uts"
-                keyPassword = "uts12345"
+            // Prefer credentials injected via the environment (CI secrets / a
+            // local keystore kept out of source control) so production builds are
+            // signed with a private key. Fall back to the bundled self-signed dev
+            // key only when no environment key is provided, so local and CI builds
+            // still produce an installable APK out of the box.
+            val envStorePath = System.getenv("RELEASE_STORE_FILE")
+            val envStoreFile = envStorePath?.let { file(it) }
+            if (envStoreFile != null && envStoreFile.exists()) {
+                storeFile = envStoreFile
+                storePassword = System.getenv("RELEASE_STORE_PASSWORD")
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+                keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+            } else {
+                // Self-signed dev key: lets local/CI builds produce an installable,
+                // shrunk release APK. NOT for Play Store distribution.
+                val ksFile = rootProject.file("release.keystore")
+                if (ksFile.exists()) {
+                    storeFile = ksFile
+                    storePassword = "uts12345"
+                    keyAlias = "uts"
+                    keyPassword = "uts12345"
+                }
             }
         }
     }

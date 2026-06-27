@@ -32,7 +32,23 @@ jobs:
         run: ./gradlew assembleDebug --stacktrace
 
       - name: Build release APK
-        run: ./gradlew assembleRelease --stacktrace
+        # When the signing secrets are configured, decode the keystore and sign
+        # with the private key; otherwise Gradle falls back to the bundled dev
+        # key so the build still succeeds.
+        env:
+          RELEASE_STORE_FILE: ${{ github.workspace }}/release-ci.keystore
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$RELEASE_KEYSTORE_BASE64" ]; then
+            echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$RELEASE_STORE_FILE"
+            echo "Signing release with the keystore from repository secrets."
+          else
+            echo "No signing secrets set; using the bundled dev key."
+          fi
+          ./gradlew assembleRelease --stacktrace
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4

@@ -99,3 +99,26 @@ APK from the **Actions** tab without building locally.
 
 مع كل دفعة (push) أو طلب دمج (PR) يبني GitHub Actions نسختي debug و release
 تلقائياً ويرفعهما كملفات قابلة للتنزيل من تبويب **Actions**.
+
+### Production signing / التوقيع للإنتاج
+
+The release build is signed with the bundled self-signed **dev** key by default
+so it always produces an installable APK. **Do not ship that key.** For a real
+release, sign with your own private keystore via the environment — no secrets in
+source:
+
+| Variable / secret | Meaning |
+| --- | --- |
+| `RELEASE_KEYSTORE_BASE64` | your `.keystore` file, base64-encoded (CI only) |
+| `RELEASE_STORE_FILE` | path to the keystore (set automatically in CI; set it yourself for local signed builds) |
+| `RELEASE_STORE_PASSWORD` | keystore password |
+| `RELEASE_KEY_ALIAS` | key alias |
+| `RELEASE_KEY_PASSWORD` | key password |
+
+In GitHub: **Settings → Secrets and variables → Actions** → add the four
+`RELEASE_*` secrets plus `RELEASE_KEYSTORE_BASE64`
+(`base64 -w0 my-release.keystore`). The CI then signs with your key; with no
+secrets set it falls back to the dev key. Locally, export the `RELEASE_*`
+variables (pointing `RELEASE_STORE_FILE` at your keystore) before
+`./gradlew assembleRelease`. For Play Store distribution, also enable
+**Play App Signing**.
