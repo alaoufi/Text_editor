@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -251,6 +252,13 @@ fun AppRoot(
                     onPickTextColor = { c -> viewModel.applyTextColor(c) },
                     onPickBgColor = { c -> viewModel.applyHighlight(c) },
                     onVoice = onVoice,
+                    onSortAsc = { viewModel.sortLines(descending = false) },
+                    onSortDesc = { viewModel.sortLines(descending = true) },
+                    onDedupe = { viewModel.removeDuplicateLines() },
+                    onTrim = { viewModel.trimTrailingWhitespace() },
+                    onDuplicateLine = { viewModel.duplicateCurrentLine() },
+                    onUppercase = { viewModel.transformSelection { it.uppercase() } },
+                    onLowercase = { viewModel.transformSelection { it.lowercase() } },
                 )
 
                 if (viewModel.isBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -439,6 +447,13 @@ private fun CompactToolbar(
     onPickTextColor: (Int?) -> Unit,
     onPickBgColor: (Int?) -> Unit,
     onVoice: () -> Unit,
+    onSortAsc: () -> Unit,
+    onSortDesc: () -> Unit,
+    onDedupe: () -> Unit,
+    onTrim: () -> Unit,
+    onDuplicateLine: () -> Unit,
+    onUppercase: () -> Unit,
+    onLowercase: () -> Unit,
 ) {
     Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface) {
         Row(
@@ -505,6 +520,16 @@ private fun CompactToolbar(
                     onPickBgColor = onPickBgColor,
                 )
                 ToolButton(Icons.Filled.FormatClear, R.string.format_clear, enabled = enabled, onClick = onClearFormat)
+                TransformMenu(
+                    enabled = enabled,
+                    onSortAsc = onSortAsc,
+                    onSortDesc = onSortDesc,
+                    onDedupe = onDedupe,
+                    onTrim = onTrim,
+                    onDuplicateLine = onDuplicateLine,
+                    onUppercase = onUppercase,
+                    onLowercase = onLowercase,
+                )
                 ToolButton(Icons.Filled.Mic, R.string.tool_voice, enabled = enabled, onClick = onVoice)
             }
         }
@@ -519,6 +544,35 @@ private val BG_COLOR_PRESETS = listOf(
     0xFFFFFFFF.toInt(), 0xFF000000.toInt(), 0xFFFFF8E1.toInt(), 0xFFEEEEEE.toInt(),
     0xFF263238.toInt(), 0xFFF5ECD9.toInt(), 0xFF0D1B2A.toInt(),
 )
+
+/** One button that expands into line-oriented text transforms. */
+@Composable
+private fun TransformMenu(
+    enabled: Boolean,
+    onSortAsc: () -> Unit,
+    onSortDesc: () -> Unit,
+    onDedupe: () -> Unit,
+    onTrim: () -> Unit,
+    onDuplicateLine: () -> Unit,
+    onUppercase: () -> Unit,
+    onLowercase: () -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        ToolButton(Icons.Filled.Transform, R.string.tool_transform, enabled = enabled, onClick = { open = true })
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(text = { Text(stringResource(R.string.transform_sort_az)) }, onClick = { open = false; onSortAsc() })
+            DropdownMenuItem(text = { Text(stringResource(R.string.transform_sort_za)) }, onClick = { open = false; onSortDesc() })
+            DropdownMenuItem(text = { Text(stringResource(R.string.transform_dedupe)) }, onClick = { open = false; onDedupe() })
+            DropdownMenuItem(text = { Text(stringResource(R.string.transform_trim)) }, onClick = { open = false; onTrim() })
+            HorizontalDivider()
+            DropdownMenuItem(text = { Text(stringResource(R.string.transform_duplicate_line)) }, onClick = { open = false; onDuplicateLine() })
+            HorizontalDivider()
+            DropdownMenuItem(text = { Text(stringResource(R.string.format_uppercase)) }, onClick = { open = false; onUppercase() })
+            DropdownMenuItem(text = { Text(stringResource(R.string.format_lowercase)) }, onClick = { open = false; onLowercase() })
+        }
+    }
+}
 
 /** One alignment button that expands into start / center / end / justify. */
 @Composable

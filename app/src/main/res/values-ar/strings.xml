@@ -50,6 +50,14 @@
     <string name="tool_line_spacing">تباعد الأسطر</string>
     <string name="voice_unavailable">الإدخال الصوتي غير متوفر على هذا الجهاز.</string>
 
+    <!-- Text transforms -->
+    <string name="tool_transform">تحويل النص</string>
+    <string name="transform_sort_az">ترتيب الأسطر (أ→ي)</string>
+    <string name="transform_sort_za">ترتيب الأسطر (ي→أ)</string>
+    <string name="transform_dedupe">حذف الأسطر المكرّرة</string>
+    <string name="transform_trim">إزالة المسافات الزائدة</string>
+    <string name="transform_duplicate_line">تكرار السطر</string>
+
     <!-- Editor / status -->
     <string name="untitled">بدون عنوان</string>
     <string name="status_lines">الأسطر: %1$d</string>

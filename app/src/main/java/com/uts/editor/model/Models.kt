@@ -87,7 +87,9 @@ enum class SyntaxLanguage(val display: String) {
     PYTHON("Python"),
     JAVA("Java"),
     KOTLIN("Kotlin"),
-    PHP("PHP");
+    PHP("PHP"),
+    MARKDOWN("Markdown"),
+    YAML("YAML");
 
     companion object {
         fun fromFileName(name: String): SyntaxLanguage {
@@ -103,6 +105,8 @@ enum class SyntaxLanguage(val display: String) {
                 "java" -> JAVA
                 "kt", "kts" -> KOTLIN
                 "php" -> PHP
+                "md", "markdown" -> MARKDOWN
+                "yaml", "yml" -> YAML
                 else -> PLAIN
             }
         }

@@ -594,6 +594,71 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         refreshStats(tab)
     }
 
+    // ------------------------------------------------------- line transforms
+
+    /** Sort the selected lines (or the whole document if nothing is selected). */
+    fun sortLines(descending: Boolean) = transformLineBlock { lines ->
+        if (descending) lines.sortedDescending() else lines.sorted()
+    }
+
+    /** Remove consecutive/duplicate lines, keeping the first occurrence of each. */
+    fun removeDuplicateLines() = transformLineBlock { it.distinct() }
+
+    /** Strip trailing spaces/tabs from every line in the block. */
+    fun trimTrailingWhitespace() = transformLineBlock { lines -> lines.map { it.trimEnd() } }
+
+    /** Duplicate the line the caret is on, placing the copy directly below it. */
+    fun duplicateCurrentLine() {
+        val tab = active ?: return
+        if (tab.doc.loadMode == LoadMode.READONLY_LARGE) return
+        val f = tab.field
+        val text = f.text
+        val pos = f.selection.start.coerceIn(0, text.length)
+        val lineStart = text.lastIndexOf('\n', (pos - 1).coerceAtLeast(0)).let { if (it == -1) 0 else it + 1 }
+        val lineEnd = text.indexOf('\n', pos).let { if (it == -1) text.length else it }
+        val line = text.substring(lineStart, lineEnd)
+        val newText = text.substring(0, lineEnd) + "\n" + line + text.substring(lineEnd)
+        tab.pushUndo(f)
+        tab.field = TextFieldValue(
+            newText,
+            selection = androidx.compose.ui.text.TextRange(lineEnd + 1 + line.length),
+        )
+        refreshStats(tab)
+    }
+
+    /**
+     * Apply [transform] to the block of whole lines touched by the selection, or
+     * to the entire document when the selection is collapsed.
+     */
+    private fun transformLineBlock(transform: (List<String>) -> List<String>) {
+        val tab = active ?: return
+        if (tab.doc.loadMode == LoadMode.READONLY_LARGE) return
+        val f = tab.field
+        val text = f.text
+        val hasSelection = f.selection.start != f.selection.end
+        val blockStart: Int
+        val blockEnd: Int
+        if (hasSelection) {
+            val s = minOf(f.selection.start, f.selection.end)
+            val e = maxOf(f.selection.start, f.selection.end)
+            blockStart = text.lastIndexOf('\n', (s - 1).coerceAtLeast(0)).let { if (it == -1) 0 else it + 1 }
+            blockEnd = text.indexOf('\n', e).let { if (it == -1) text.length else it }
+        } else {
+            blockStart = 0
+            blockEnd = text.length
+        }
+        val block = text.substring(blockStart, blockEnd)
+        val newBlock = transform(block.split('\n')).joinToString("\n")
+        if (newBlock == block) return
+        val newText = text.substring(0, blockStart) + newBlock + text.substring(blockEnd)
+        tab.pushUndo(f)
+        tab.field = TextFieldValue(
+            newText,
+            selection = androidx.compose.ui.text.TextRange(blockStart, blockStart + newBlock.length),
+        )
+        refreshStats(tab)
+    }
+
     fun undo() {
         val tab = active ?: return
         tab.undo()?.let { tab.field = it; refreshStats(tab) }

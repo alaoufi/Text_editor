@@ -50,6 +50,14 @@
     <string name="tool_line_spacing">Line spacing</string>
     <string name="voice_unavailable">Voice input is not available on this device.</string>
 
+    <!-- Text transforms -->
+    <string name="tool_transform">Transform text</string>
+    <string name="transform_sort_az">Sort lines (A→Z)</string>
+    <string name="transform_sort_za">Sort lines (Z→A)</string>
+    <string name="transform_dedupe">Remove duplicate lines</string>
+    <string name="transform_trim">Trim trailing spaces</string>
+    <string name="transform_duplicate_line">Duplicate line</string>
+
     <!-- Editor / status -->
     <string name="untitled">Untitled</string>
     <string name="status_lines">Lines: %1$d</string>

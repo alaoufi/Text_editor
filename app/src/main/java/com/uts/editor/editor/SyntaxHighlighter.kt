@@ -72,12 +72,17 @@ object SyntaxHighlighter {
     }
 
     private fun rulesFor(language: SyntaxLanguage): List<Rule> {
+        // Markdown is prose, not code: the generic string/number rules would
+        // mis-colour ordinary text, so it gets a tailored, line-aware rule set.
+        if (language == SyntaxLanguage.MARKDOWN) return markdownRules()
+
         // Order is significant: comments and strings must win over keywords.
         val commentRules: List<Rule> = when (language) {
             SyntaxLanguage.SQL -> listOf(Rule(Regex("--[^\n]*"), TokenKind.COMMENT), Rule(Regex("/\\*[\\s\\S]*?\\*/"), TokenKind.COMMENT))
             SyntaxLanguage.PYTHON -> listOf(Rule(Regex("#[^\n]*"), TokenKind.COMMENT))
             SyntaxLanguage.HTML, SyntaxLanguage.XML -> listOf(Rule(Regex("<!--[\\s\\S]*?-->"), TokenKind.COMMENT))
             SyntaxLanguage.CSS -> listOf(Rule(Regex("/\\*[\\s\\S]*?\\*/"), TokenKind.COMMENT))
+            SyntaxLanguage.YAML -> listOf(Rule(Regex("#[^\n]*"), TokenKind.COMMENT))
             // JSON has no comments; everything else uses C-style comments.
             SyntaxLanguage.JSON -> emptyList()
             else -> listOf(Rule(Regex("//[^\n]*"), TokenKind.COMMENT), Rule(Regex("/\\*[\\s\\S]*?\\*/"), TokenKind.COMMENT))
@@ -100,6 +105,10 @@ object SyntaxHighlighter {
                 Rule(Regex("</?[A-Za-z_][\\w:-]*"), TokenKind.TAG),
                 Rule(Regex(">"), TokenKind.TAG),
                 Rule(Regex("[A-Za-z_][\\w:-]*(?==)"), TokenKind.ATTRIBUTE),
+            )
+            // Highlight the "key:" part of each YAML mapping entry.
+            SyntaxLanguage.YAML -> listOf(
+                Rule(Regex("(?m)^\\s*-?\\s*[\\w.-]+(?=\\s*:)"), TokenKind.ATTRIBUTE),
             )
             else -> emptyList()
         }
@@ -159,6 +168,24 @@ object SyntaxHighlighter {
             "flex", "grid", "block", "inline", "absolute", "relative", "fixed",
         )
         SyntaxLanguage.JSON -> listOf("true", "false", "null")
+        SyntaxLanguage.YAML -> listOf(
+            "true", "false", "null", "yes", "no", "on", "off",
+            "True", "False", "Null", "Yes", "No",
+        )
         else -> null
     }
+
+    /**
+     * Markdown highlighting. Prose, so it deliberately avoids the generic
+     * string/number rules and uses line-aware patterns for its own structure.
+     */
+    private fun markdownRules(): List<Rule> = listOf(
+        Rule(Regex("```[\\s\\S]*?```"), TokenKind.STRING),               // fenced code block
+        Rule(Regex("(?m)^#{1,6} .*$"), TokenKind.KEYWORD),               // headings
+        Rule(Regex("(?m)^>[^\n]*"), TokenKind.COMMENT),                  // blockquote
+        Rule(Regex("`[^`\n]+`"), TokenKind.STRING),                      // inline code
+        Rule(Regex("\\*\\*[^*\n]+\\*\\*"), TokenKind.TAG),               // bold
+        Rule(Regex("\\[[^\\]\n]*\\]\\([^)\n]*\\)"), TokenKind.ATTRIBUTE), // links
+        Rule(Regex("(?m)^\\s*(?:[-*+]|\\d+\\.) "), TokenKind.NUMBER),    // list markers
+    )
 }
