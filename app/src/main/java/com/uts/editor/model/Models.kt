@@ -33,8 +33,21 @@ data class TextStats(
 ) {
     companion object {
         fun of(text: String, sizeBytes: Long): TextStats {
-            val lines = if (text.isEmpty()) 1 else text.count { it == '\n' } + 1
-            val words = text.split(Regex("\\s+")).count { it.isNotBlank() }
+            // Single pass: counting newlines and word boundaries directly avoids
+            // the regex compile + full list allocation that split() did on every
+            // keystroke, which was costly for large editable documents.
+            var lines = 1
+            var words = 0
+            var inWord = false
+            for (ch in text) {
+                if (ch == '\n') lines++
+                if (ch.isWhitespace()) {
+                    inWord = false
+                } else if (!inWord) {
+                    inWord = true
+                    words++
+                }
+            }
             return TextStats(lines = lines, words = words, chars = text.length, sizeBytes = sizeBytes)
         }
     }

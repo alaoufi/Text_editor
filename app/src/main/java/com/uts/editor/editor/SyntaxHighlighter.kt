@@ -28,63 +28,78 @@ object SyntaxHighlighter {
     /** Don't attempt to highlight beyond this many characters (keeps typing smooth). */
     const val MAX_HIGHLIGHT_CHARS = 120_000
 
-    private data class Rule(val regex: Regex, val style: SpanStyle)
+    /** A token category; mapped to a concrete colour from the active theme at draw time. */
+    private enum class TokenKind { COMMENT, STRING, KEYWORD, NUMBER, TAG, ATTRIBUTE }
+
+    private data class Rule(val regex: Regex, val kind: TokenKind)
+
+    /**
+     * Compiled regex rules are independent of the theme colours, so they are
+     * built once per language and reused — recompiling them on every
+     * recomposition was the main highlighting cost.
+     */
+    private val ruleCache = HashMap<SyntaxLanguage, List<Rule>>()
 
     fun highlight(text: String, language: SyntaxLanguage, colors: SyntaxColors): AnnotatedString {
         if (language == SyntaxLanguage.PLAIN || text.length > MAX_HIGHLIGHT_CHARS) {
             return AnnotatedString(text)
         }
-        val rules = rulesFor(language, colors)
+        val rules = ruleCache.getOrPut(language) { rulesFor(language) }
         return buildAnnotatedString {
             append(text)
             // Track consumed ranges so a keyword inside a string isn't recoloured.
             val taken = BooleanArray(text.length)
             for (rule in rules) {
+                val style = styleFor(rule.kind, colors)
                 for (m in rule.regex.findAll(text)) {
                     val r = m.range
                     if (r.isEmpty()) continue
                     if (taken[r.first]) continue
-                    addStyle(rule.style, r.first, r.last + 1)
+                    addStyle(style, r.first, r.last + 1)
                     for (i in r.first..r.last) taken[i] = true
                 }
             }
         }
     }
 
-    private fun rulesFor(language: SyntaxLanguage, c: SyntaxColors): List<Rule> {
-        val str = SpanStyle(color = c.string)
-        val com = SpanStyle(color = c.comment, fontWeight = FontWeight.Normal)
-        val kw = SpanStyle(color = c.keyword, fontWeight = FontWeight.Bold)
-        val num = SpanStyle(color = c.number)
-        val tag = SpanStyle(color = c.tag, fontWeight = FontWeight.Bold)
-        val attr = SpanStyle(color = c.attribute)
+    private fun styleFor(kind: TokenKind, c: SyntaxColors): SpanStyle = when (kind) {
+        TokenKind.COMMENT -> SpanStyle(color = c.comment, fontWeight = FontWeight.Normal)
+        TokenKind.STRING -> SpanStyle(color = c.string)
+        TokenKind.KEYWORD -> SpanStyle(color = c.keyword, fontWeight = FontWeight.Bold)
+        TokenKind.NUMBER -> SpanStyle(color = c.number)
+        TokenKind.TAG -> SpanStyle(color = c.tag, fontWeight = FontWeight.Bold)
+        TokenKind.ATTRIBUTE -> SpanStyle(color = c.attribute)
+    }
 
+    private fun rulesFor(language: SyntaxLanguage): List<Rule> {
         // Order is significant: comments and strings must win over keywords.
         val commentRules: List<Rule> = when (language) {
-            SyntaxLanguage.SQL -> listOf(Rule(Regex("--[^\n]*"), com), Rule(Regex("/\\*[\\s\\S]*?\\*/"), com))
-            SyntaxLanguage.PYTHON -> listOf(Rule(Regex("#[^\n]*"), com))
-            SyntaxLanguage.HTML, SyntaxLanguage.XML -> listOf(Rule(Regex("<!--[\\s\\S]*?-->"), com))
-            SyntaxLanguage.CSS -> listOf(Rule(Regex("/\\*[\\s\\S]*?\\*/"), com))
-            else -> listOf(Rule(Regex("//[^\n]*"), com), Rule(Regex("/\\*[\\s\\S]*?\\*/"), com))
+            SyntaxLanguage.SQL -> listOf(Rule(Regex("--[^\n]*"), TokenKind.COMMENT), Rule(Regex("/\\*[\\s\\S]*?\\*/"), TokenKind.COMMENT))
+            SyntaxLanguage.PYTHON -> listOf(Rule(Regex("#[^\n]*"), TokenKind.COMMENT))
+            SyntaxLanguage.HTML, SyntaxLanguage.XML -> listOf(Rule(Regex("<!--[\\s\\S]*?-->"), TokenKind.COMMENT))
+            SyntaxLanguage.CSS -> listOf(Rule(Regex("/\\*[\\s\\S]*?\\*/"), TokenKind.COMMENT))
+            // JSON has no comments; everything else uses C-style comments.
+            SyntaxLanguage.JSON -> emptyList()
+            else -> listOf(Rule(Regex("//[^\n]*"), TokenKind.COMMENT), Rule(Regex("/\\*[\\s\\S]*?\\*/"), TokenKind.COMMENT))
         }
 
         val stringRules = listOf(
-            Rule(Regex("\"(?:\\\\.|[^\"\\\\])*\""), str),
-            Rule(Regex("'(?:\\\\.|[^'\\\\])*'"), str),
-            Rule(Regex("`(?:\\\\.|[^`\\\\])*`"), str),
+            Rule(Regex("\"(?:\\\\.|[^\"\\\\])*\""), TokenKind.STRING),
+            Rule(Regex("'(?:\\\\.|[^'\\\\])*'"), TokenKind.STRING),
+            Rule(Regex("`(?:\\\\.|[^`\\\\])*`"), TokenKind.STRING),
         )
 
-        val numberRule = Rule(Regex("\\b\\d+(?:\\.\\d+)?\\b"), num)
+        val numberRule = Rule(Regex("\\b\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b"), TokenKind.NUMBER)
 
         val keywordRule: Rule? = keywordsFor(language)?.let { words ->
-            Rule(Regex("\\b(?:${words.joinToString("|")})\\b"), kw)
+            Rule(Regex("\\b(?:${words.joinToString("|")})\\b"), TokenKind.KEYWORD)
         }
 
         val tagRules: List<Rule> = when (language) {
             SyntaxLanguage.HTML, SyntaxLanguage.XML -> listOf(
-                Rule(Regex("</?[A-Za-z_][\\w:-]*"), tag),
-                Rule(Regex(">"), tag),
-                Rule(Regex("[A-Za-z_][\\w:-]*(?==)"), attr),
+                Rule(Regex("</?[A-Za-z_][\\w:-]*"), TokenKind.TAG),
+                Rule(Regex(">"), TokenKind.TAG),
+                Rule(Regex("[A-Za-z_][\\w:-]*(?==)"), TokenKind.ATTRIBUTE),
             )
             else -> emptyList()
         }
@@ -143,6 +158,7 @@ object SyntaxHighlighter {
             "important", "px", "em", "rem", "rgb", "rgba", "hsl", "url", "none",
             "flex", "grid", "block", "inline", "absolute", "relative", "fixed",
         )
+        SyntaxLanguage.JSON -> listOf("true", "false", "null")
         else -> null
     }
 }
