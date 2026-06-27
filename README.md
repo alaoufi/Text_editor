@@ -38,7 +38,10 @@ Pre-built signed APK: [`dist/GlobalTextEditor-v1.5-release.apk`](dist/GlobalText
   correctly — digits, brackets and punctuation are never flipped
   (`TextDirection.Content`).
 - **Syntax highlighting** for SQL, HTML, CSS, JavaScript, JSON, XML, Python,
-  Java, Kotlin, PHP.
+  Java, Kotlin, PHP, **Markdown**, and **YAML**.
+- **Text transforms**: sort lines (A→Z / Z→A), remove duplicate lines, trim
+  trailing whitespace, duplicate the current line, and UPPER/lower-case the
+  selection — applied to the selected lines or the whole document, all undoable.
 - **Dark / light / system theme** (Material Design 3, dynamic color on Android 12+).
 - **Share**, **Export to PDF**, **Print** (Android print framework), **new files**,
   and **multiple tabs**.
@@ -85,3 +88,14 @@ confidence is low, the user is prompted with a live preview instead of guessing.
 ```
 
 Output: `app/build/outputs/apk/release/app-release.apk`.
+
+### Continuous integration / التكامل المستمر
+
+Every push and pull request runs `.github/workflows/android-build.yml`, which
+builds both the **debug** and **release** APKs on GitHub Actions (JDK 17,
+Gradle wrapper) and uploads them as downloadable artifacts
+(`GlobalTextEditor-debug`, `GlobalTextEditor-release`) — grab a freshly built
+APK from the **Actions** tab without building locally.
+
+مع كل دفعة (push) أو طلب دمج (PR) يبني GitHub Actions نسختي debug و release
+تلقائياً ويرفعهما كملفات قابلة للتنزيل من تبويب **Actions**.
