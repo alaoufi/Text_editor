@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Global Text Editor</string>
+
+    <!-- Actions -->
+    <string name="action_new">New</string>
+    <string name="action_open">Open</string>
+    <string name="action_save">Save</string>
+    <string name="action_save_as">Save as…</string>
+    <string name="action_open_zip">Open from ZIP</string>
+    <string name="action_share">Share</string>
+    <string name="action_export_pdf">Export to PDF</string>
+    <string name="action_export_html">Export to HTML (keeps formatting)</string>
+    <string name="format_clear">Clear formatting</string>
+    <string name="action_print">Print</string>
+    <string name="action_find">Find &amp; Replace</string>
+    <string name="action_goto_line">Go to line</string>
+    <string name="action_settings">Settings</string>
+    <string name="action_close">Close</string>
+    <string name="action_undo">Undo</string>
+    <string name="action_redo">Redo</string>
+    <string name="action_menu">Menu</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_ok">OK</string>
+    <string name="action_replace">Replace</string>
+    <string name="action_replace_all">Replace all</string>
+    <string name="action_next">Next</string>
+    <string name="action_previous">Previous</string>
+    <string name="action_go">Go</string>
+    <string name="action_close_document">Close document</string>
+    <string name="format_bold">Bold</string>
+    <string name="format_italic">Italic</string>
+    <string name="format_heading">Heading</string>
+    <string name="format_list">Bulleted list</string>
+    <string name="format_quote">Quote</string>
+    <string name="format_uppercase">UPPERCASE</string>
+    <string name="format_lowercase">lowercase</string>
+    <string name="tool_font_increase">Increase font</string>
+    <string name="tool_font_decrease">Decrease font</string>
+    <string name="tool_align">Alignment</string>
+    <string name="tool_text_color">Text color</string>
+    <string name="tool_bg_color">Background color</string>
+    <string name="tool_voice">Voice input</string>
+    <string name="color_default">Default</string>
+    <string name="align_start">Start</string>
+    <string name="align_center">Center</string>
+    <string name="align_end">End</string>
+    <string name="align_justify">Justify</string>
+    <string name="tool_font">Font</string>
+    <string name="tool_line_spacing">Line spacing</string>
+    <string name="voice_unavailable">Voice input is not available on this device.</string>
+
+    <!-- Editor / status -->
+    <string name="untitled">Untitled</string>
+    <string name="status_lines">Lines: %1$d</string>
+    <string name="status_words">Words: %1$d</string>
+    <string name="status_chars">Chars: %1$d</string>
+    <string name="status_size">Size: %1$s</string>
+    <string name="status_encoding">Encoding: %1$s</string>
+    <string name="status_position">Ln %1$d, Col %2$d</string>
+    <string name="unsaved_indicator">Modified</string>
+    <string name="line_numbers">Line numbers</string>
+    <string name="word_wrap">Word wrap</string>
+
+    <!-- Encoding -->
+    <string name="encoding_title">Choose encoding</string>
+    <string name="encoding_detect_failed">Could not auto-detect the encoding. Please choose one and preview the result.</string>
+    <string name="encoding_preview">Preview</string>
+    <string name="encoding_auto">Auto-detect</string>
+    <string name="encoding_reopen_with">Reopen with encoding…</string>
+    <string name="encoding_save_with">Save with encoding</string>
+    <string name="encoding_detected">Detected: %1$s (confidence %2$d%%)</string>
+
+    <!-- Find/replace -->
+    <string name="find_hint">Find</string>
+    <string name="replace_hint">Replace with</string>
+    <string name="use_regex">Regex</string>
+    <string name="match_case">Match case</string>
+    <string name="whole_word">Whole word</string>
+    <string name="find_results">%1$d / %2$d</string>
+    <string name="find_none">No matches</string>
+    <string name="goto_line_hint">Line number (1 - %1$d)</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_system">Follow system</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_language_system">System default</string>
+    <string name="settings_language_ar">العربية</string>
+    <string name="settings_language_en">English</string>
+    <string name="settings_font_size">Font size</string>
+    <string name="settings_autosave">Auto-save drafts</string>
+    <string name="settings_autosave_desc">Keep an automatic recovery copy every 30 seconds</string>
+    <string name="settings_syntax">Syntax highlighting</string>
+    <string name="settings_about">About</string>
+    <string name="settings_save_folder">Default save folder</string>
+    <string name="settings_save_folder_none">Not set (ask each time)</string>
+    <string name="settings_choose_folder">Choose folder</string>
+    <string name="settings_clear_folder">Clear</string>
+    <string name="save_into_folder">Will be saved into: %1$s</string>
+    <string name="file_name_hint">File name</string>
+
+    <!-- Recovery -->
+    <string name="recovery_title">Recover unsaved work?</string>
+    <string name="recovery_message">The app closed unexpectedly. Unsaved changes for \"%1$s\" were found.</string>
+    <string name="recovery_restore">Restore</string>
+    <string name="recovery_discard">Discard</string>
+
+    <!-- Messages -->
+    <string name="msg_saved">Saved</string>
+    <string name="msg_save_failed">Save failed: %1$s</string>
+    <string name="msg_open_failed">Could not open file: %1$s</string>
+    <string name="msg_large_file_readonly">This file is very large (%1$s). It is opened in read-only paged mode to keep the app responsive.</string>
+    <string name="msg_binary_warning">This file does not look like text. Open anyway?</string>
+    <string name="msg_no_app_to_open">No file picker available.</string>
+    <string name="msg_loading">Loading…</string>
+    <string name="msg_saving">Saving…</string>
+
+    <!-- Tabs -->
+    <string name="tab_close_others">Close others</string>
+    <string name="tab_close">Close tab</string>
+    <string name="confirm_discard_title">Discard changes?</string>
+    <string name="confirm_discard_message">\"%1$s\" has unsaved changes.</string>
+    <string name="confirm_discard_save">Save</string>
+    <string name="confirm_discard_dont_save">Don\'t save</string>
+
+    <string name="about_text">Global Text Editor — a fast, Unicode-safe text editor with first-class Arabic support and automatic encoding detection.</string>
+</resources>

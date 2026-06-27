@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">محرر النصوص العالمي</string>
+
+    <!-- Actions -->
+    <string name="action_new">جديد</string>
+    <string name="action_open">فتح</string>
+    <string name="action_save">حفظ</string>
+    <string name="action_save_as">حفظ باسم…</string>
+    <string name="action_open_zip">فتح من ملف مضغوط</string>
+    <string name="action_share">مشاركة</string>
+    <string name="action_export_pdf">تصدير إلى PDF</string>
+    <string name="action_export_html">تصدير إلى HTML (يحفظ التنسيق)</string>
+    <string name="format_clear">مسح التنسيق</string>
+    <string name="action_print">طباعة</string>
+    <string name="action_find">بحث واستبدال</string>
+    <string name="action_goto_line">الانتقال إلى سطر</string>
+    <string name="action_settings">الإعدادات</string>
+    <string name="action_close">إغلاق</string>
+    <string name="action_undo">تراجع</string>
+    <string name="action_redo">إعادة</string>
+    <string name="action_menu">القائمة</string>
+    <string name="action_cancel">إلغاء</string>
+    <string name="action_ok">موافق</string>
+    <string name="action_replace">استبدال</string>
+    <string name="action_replace_all">استبدال الكل</string>
+    <string name="action_next">التالي</string>
+    <string name="action_previous">السابق</string>
+    <string name="action_go">انتقال</string>
+    <string name="action_close_document">إغلاق المستند</string>
+    <string name="format_bold">عريض</string>
+    <string name="format_italic">مائل</string>
+    <string name="format_heading">عنوان</string>
+    <string name="format_list">قائمة نقطية</string>
+    <string name="format_quote">اقتباس</string>
+    <string name="format_uppercase">أحرف كبيرة</string>
+    <string name="format_lowercase">أحرف صغيرة</string>
+    <string name="tool_font_increase">تكبير الخط</string>
+    <string name="tool_font_decrease">تصغير الخط</string>
+    <string name="tool_align">المحاذاة</string>
+    <string name="tool_text_color">لون الخط</string>
+    <string name="tool_bg_color">لون الخلفية</string>
+    <string name="tool_voice">إدخال صوتي</string>
+    <string name="color_default">افتراضي</string>
+    <string name="align_start">محاذاة للبداية</string>
+    <string name="align_center">توسيط</string>
+    <string name="align_end">محاذاة للنهاية</string>
+    <string name="align_justify">ضبط</string>
+    <string name="tool_font">الخط</string>
+    <string name="tool_line_spacing">تباعد الأسطر</string>
+    <string name="voice_unavailable">الإدخال الصوتي غير متوفر على هذا الجهاز.</string>
+
+    <!-- Editor / status -->
+    <string name="untitled">بدون عنوان</string>
+    <string name="status_lines">الأسطر: %1$d</string>
+    <string name="status_words">الكلمات: %1$d</string>
+    <string name="status_chars">الأحرف: %1$d</string>
+    <string name="status_size">الحجم: %1$s</string>
+    <string name="status_encoding">الترميز: %1$s</string>
+    <string name="status_position">سطر %1$d، عمود %2$d</string>
+    <string name="unsaved_indicator">معدّل</string>
+    <string name="line_numbers">أرقام الأسطر</string>
+    <string name="word_wrap">التفاف النص</string>
+
+    <!-- Encoding -->
+    <string name="encoding_title">اختيار الترميز</string>
+    <string name="encoding_detect_failed">تعذّر اكتشاف الترميز تلقائياً. الرجاء اختيار ترميز ومعاينة النتيجة.</string>
+    <string name="encoding_preview">معاينة</string>
+    <string name="encoding_auto">اكتشاف تلقائي</string>
+    <string name="encoding_reopen_with">إعادة الفتح بترميز…</string>
+    <string name="encoding_save_with">الحفظ بترميز</string>
+    <string name="encoding_detected">المكتشف: %1$s (الثقة %2$d%%)</string>
+
+    <!-- Find/replace -->
+    <string name="find_hint">بحث</string>
+    <string name="replace_hint">استبدال بـ</string>
+    <string name="use_regex">تعبير نمطي</string>
+    <string name="match_case">مطابقة الحالة</string>
+    <string name="whole_word">كلمة كاملة</string>
+    <string name="find_results">%1$d / %2$d</string>
+    <string name="find_none">لا توجد نتائج</string>
+    <string name="goto_line_hint">رقم السطر (1 - %1$d)</string>
+
+    <!-- Settings -->
+    <string name="settings_title">الإعدادات</string>
+    <string name="settings_theme">المظهر</string>
+    <string name="settings_theme_system">حسب النظام</string>
+    <string name="settings_theme_light">نهاري</string>
+    <string name="settings_theme_dark">ليلي</string>
+    <string name="settings_language">اللغة</string>
+    <string name="settings_language_system">لغة النظام</string>
+    <string name="settings_language_ar">العربية</string>
+    <string name="settings_language_en">English</string>
+    <string name="settings_font_size">حجم الخط</string>
+    <string name="settings_autosave">حفظ تلقائي للمسودات</string>
+    <string name="settings_autosave_desc">الاحتفاظ بنسخة استعادة تلقائية كل 30 ثانية</string>
+    <string name="settings_syntax">تلوين الأكواد</string>
+    <string name="settings_about">حول التطبيق</string>
+    <string name="settings_save_folder">مجلد الحفظ الافتراضي</string>
+    <string name="settings_save_folder_none">غير محدد (السؤال في كل مرة)</string>
+    <string name="settings_choose_folder">اختيار مجلد</string>
+    <string name="settings_clear_folder">مسح</string>
+    <string name="save_into_folder">سيُحفظ في: %1$s</string>
+    <string name="file_name_hint">اسم الملف</string>
+
+    <!-- Recovery -->
+    <string name="recovery_title">استعادة العمل غير المحفوظ؟</string>
+    <string name="recovery_message">أُغلق التطبيق بشكل غير متوقع. تم العثور على تغييرات غير محفوظة للملف \"%1$s\".</string>
+    <string name="recovery_restore">استعادة</string>
+    <string name="recovery_discard">تجاهل</string>
+
+    <!-- Messages -->
+    <string name="msg_saved">تم الحفظ</string>
+    <string name="msg_save_failed">فشل الحفظ: %1$s</string>
+    <string name="msg_open_failed">تعذّر فتح الملف: %1$s</string>
+    <string name="msg_large_file_readonly">هذا الملف كبير جداً (%1$s). تم فتحه بوضع القراءة المقسّم للحفاظ على استجابة التطبيق.</string>
+    <string name="msg_binary_warning">لا يبدو أن هذا الملف نصي. هل تريد فتحه على أي حال؟</string>
+    <string name="msg_no_app_to_open">لا يوجد منتقي ملفات متاح.</string>
+    <string name="msg_loading">جارٍ التحميل…</string>
+    <string name="msg_saving">جارٍ الحفظ…</string>
+
+    <!-- Tabs -->
+    <string name="tab_close_others">إغلاق البقية</string>
+    <string name="tab_close">إغلاق التبويب</string>
+    <string name="confirm_discard_title">تجاهل التغييرات؟</string>
+    <string name="confirm_discard_message">يحتوي \"%1$s\" على تغييرات غير محفوظة.</string>
+    <string name="confirm_discard_save">حفظ</string>
+    <string name="confirm_discard_dont_save">عدم الحفظ</string>
+
+    <string name="about_text">محرر النصوص العالمي — محرر نصوص سريع وآمن للترميز Unicode مع دعم متميّز للغة العربية واكتشاف تلقائي للترميز.</string>
+</resources>
