@@ -314,6 +314,13 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun cancelEncodingPrompt() { encodingPrompt = null }
 
+    /** Manually override the syntax-highlight language for the active document
+     *  (useful for extensionless files or PDF/Word text that is actually code). */
+    fun setActiveLanguage(language: SyntaxLanguage) {
+        val tab = active ?: return
+        tab.doc = tab.doc.copy(language = language)
+    }
+
     /** Reopen the active document with a different encoding (re-decodes from disk). */
     fun reopenActiveWithEncoding() {
         val tab = active ?: return

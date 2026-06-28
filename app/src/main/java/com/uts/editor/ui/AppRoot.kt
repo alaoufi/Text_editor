@@ -104,6 +104,7 @@ fun AppRoot(
     var menuOpen by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showGoto by remember { mutableStateOf(false) }
+    var showLanguage by remember { mutableStateOf(false) }
     var pendingClose by remember { mutableStateOf<Int?>(null) }
     var showSaveName by remember { mutableStateOf(false) }
 
@@ -232,6 +233,7 @@ fun AppRoot(
                     onSaveAs = { menuOpen = false; saveAsLauncher.launch(active?.doc?.displayName ?: "untitled.txt") },
                     onCloseDoc = { menuOpen = false; onCloseActive() },
                     onGoto = { menuOpen = false; showGoto = true },
+                    onSyntaxLanguage = { menuOpen = false; showLanguage = true },
                     onShare = { menuOpen = false; active?.let { ShareHelper.shareText(context, it.doc.displayName, it.field.text) } },
                     onExportPdf = { menuOpen = false; exportPdfLauncher.launch((active?.doc?.displayName ?: "document") + ".pdf") },
                     onExportHtml = { menuOpen = false; exportHtmlLauncher.launch((active?.doc?.displayName?.substringBeforeLast('.') ?: "document") + ".html") },
@@ -356,6 +358,14 @@ fun AppRoot(
             )
         }
 
+        if (showLanguage && active != null) {
+            LanguageDialog(
+                current = active.doc.language,
+                onConfirm = { viewModel.setActiveLanguage(it); showLanguage = false },
+                onDismiss = { showLanguage = false },
+            )
+        }
+
         if (showSaveName && active != null) {
             FileNameDialog(
                 initial = active.doc.displayName,
@@ -427,6 +437,7 @@ private fun CompactToolbar(
     onSaveAs: () -> Unit,
     onCloseDoc: () -> Unit,
     onGoto: () -> Unit,
+    onSyntaxLanguage: () -> Unit,
     onShare: () -> Unit,
     onExportPdf: () -> Unit,
     onExportHtml: () -> Unit,
@@ -490,6 +501,7 @@ private fun CompactToolbar(
                     DropdownMenuItem(text = { Text(stringResource(R.string.action_close_document)) }, onClick = onCloseDoc)
                     HorizontalDivider()
                     DropdownMenuItem(text = { Text(stringResource(R.string.action_goto_line)) }, onClick = onGoto)
+                    DropdownMenuItem(text = { Text(stringResource(R.string.action_syntax_language)) }, onClick = onSyntaxLanguage)
                     DropdownMenuItem(text = { Text(stringResource(R.string.action_share)) }, onClick = onShare)
                     DropdownMenuItem(text = { Text(stringResource(R.string.action_export_html)) }, onClick = onExportHtml)
                     DropdownMenuItem(text = { Text(stringResource(R.string.action_export_pdf)) }, onClick = onExportPdf)

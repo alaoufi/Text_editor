@@ -15,6 +15,7 @@
     <string name="action_print">طباعة</string>
     <string name="action_find">بحث واستبدال</string>
     <string name="action_goto_line">الانتقال إلى سطر</string>
+    <string name="action_syntax_language">لغة التظليل</string>
     <string name="action_settings">الإعدادات</string>
     <string name="action_close">إغلاق</string>
     <string name="action_undo">تراجع</string>

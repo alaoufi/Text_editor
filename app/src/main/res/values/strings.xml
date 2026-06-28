@@ -15,6 +15,7 @@
     <string name="action_print">Print</string>
     <string name="action_find">Find &amp; Replace</string>
     <string name="action_goto_line">Go to line</string>
+    <string name="action_syntax_language">Syntax language</string>
     <string name="action_settings">Settings</string>
     <string name="action_close">Close</string>
     <string name="action_undo">Undo</string>

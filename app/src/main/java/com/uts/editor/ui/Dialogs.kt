@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.uts.editor.R
+import com.uts.editor.model.SyntaxLanguage
 import com.uts.editor.model.TextEncoding
 import com.uts.editor.viewmodel.EncodingPrompt
 import com.uts.editor.viewmodel.EncodingPromptReason
@@ -231,6 +232,35 @@ fun DiscardDialog(name: String, onSave: () -> Unit, onDiscard: () -> Unit, onCan
         dismissButton = { TextButton(onClick = onDiscard) { Text(stringResource(R.string.confirm_discard_dont_save)) } },
         title = { Text(stringResource(R.string.confirm_discard_title)) },
         text = { Text(stringResource(R.string.confirm_discard_message, name)) },
+    )
+}
+
+@Composable
+fun LanguageDialog(
+    current: SyntaxLanguage,
+    onConfirm: (SyntaxLanguage) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var selected by remember { mutableStateOf(current) }
+    val languages = remember { SyntaxLanguage.entries.toList() }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = { onConfirm(selected) }) { Text(stringResource(R.string.action_ok)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+        title = { Text(stringResource(R.string.action_syntax_language)) },
+        text = {
+            LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                items(languages) { lang ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().clickable { selected = lang }.padding(vertical = 2.dp),
+                    ) {
+                        RadioButton(selected = selected == lang, onClick = { selected = lang })
+                        Text(lang.display)
+                    }
+                }
+            }
+        },
     )
 }
 
