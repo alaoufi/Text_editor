@@ -56,6 +56,9 @@ releases:
 - **Share**, **Export to PDF**, **Print** (Android print framework), **new files**,
   and **multiple tabs**.
 - **Open text files inside ZIP archives** without manual extraction.
+- **Read PDF and Word files**: extracts the text (Unicode/Arabic-safe via
+  Apache PDFBox for PDF) into an editable buffer for viewing, copying, and
+  re-saving as text — formatting is not preserved.
 - **Status bar**: line numbers, word / character / line counts, file size,
   current encoding, and caret position.
 - **Crash-safe autosave** every 30 seconds with **recovery on next launch**.

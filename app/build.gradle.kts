@@ -103,5 +103,8 @@ dependencies {
     // Lightweight charset detection (Mozilla universalchardet, maintained fork).
     implementation("com.github.albfernandez:juniversalchardet:2.5.0")
 
+    // PDF text extraction (Apache PDFBox, Android port) for opening PDFs as text.
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

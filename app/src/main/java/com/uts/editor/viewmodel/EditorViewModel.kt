@@ -13,6 +13,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.uts.editor.data.EncodingDetector
 import com.uts.editor.data.FileIo
+import com.uts.editor.data.PdfExtractor
 import com.uts.editor.data.RecoveryStore
 import com.uts.editor.data.SettingsStore
 import com.uts.editor.data.WordExtractor
@@ -137,6 +138,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     openWord(uri, meta.name)
                     return@launch
                 }
+                if (PdfExtractor.isPdf(meta.name)) {
+                    openPdf(uri, meta.name)
+                    return@launch
+                }
                 if (meta.name.endsWith(".zip", true)) {
                     val entries = withContext(Dispatchers.IO) { ZipSupport.listTextEntries(resolver, uri) }
                     zipPrompt = ZipPrompt(uri, entries)
@@ -247,6 +252,38 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } catch (e: Exception) {
                 emit("Could not read Word file: ${e.message}")
+            } finally {
+                isBusy = false
+            }
+        }
+    }
+
+    /** Open a PDF by extracting its text (view & copy; not PDF editing). */
+    private fun openPdf(uri: Uri, name: String) {
+        viewModelScope.launch {
+            isBusy = true
+            try {
+                val text = withContext(Dispatchers.IO) { PdfExtractor.extract(resolver, uri) }
+                if (text.isBlank()) {
+                    emit("No readable text found in \"$name\" (it may be scanned images).")
+                    return@launch
+                }
+                val (normalized, ending) = normalizeIn(text)
+                // Present extracted text as a new editable .txt buffer (no source Uri,
+                // so saving goes through Save As to a real text file).
+                val baseName = name.substringBeforeLast('.') + ".txt"
+                val id = UUID.randomUUID().toString()
+                val doc = DocumentState(
+                    id = id, uri = null, displayName = baseName, encoding = TextEncoding.UTF_8,
+                    lineEnding = ending, language = SyntaxLanguage.PLAIN,
+                    loadMode = LoadMode.EDITABLE, isModified = true,
+                    stats = TextStats.of(normalized, normalized.toByteArray().size.toLong()),
+                )
+                val tab = EditorTab(doc, TextFieldValue(normalized)).also { it.savedSignature = -1 }
+                tabs.add(tab); activeIndex = tabs.lastIndex
+                emit("Text extracted from PDF (formatting not preserved).")
+            } catch (e: Exception) {
+                emit("Could not read PDF: ${e.message}")
             } finally {
                 isBusy = false
             }
