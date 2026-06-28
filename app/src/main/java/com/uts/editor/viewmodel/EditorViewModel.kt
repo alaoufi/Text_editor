@@ -139,6 +139,12 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     return@launch
                 }
                 if (PdfExtractor.isPdf(meta.name)) {
+                    // PDF text extraction holds the document in memory, so guard
+                    // against huge PDFs that would risk an out-of-memory crash.
+                    if (meta.size in 1..Long.MAX_VALUE && meta.size > PDF_EXTRACT_LIMIT_BYTES) {
+                        emit("PDF is too large to read (${humanSize(meta.size)}); limit is ${humanSize(PDF_EXTRACT_LIMIT_BYTES)}.")
+                        return@launch
+                    }
                     openPdf(uri, meta.name)
                     return@launch
                 }
@@ -670,6 +676,48 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         refreshStats(tab)
     }
 
+    /** Delete the line the caret is on. */
+    fun deleteCurrentLine() {
+        val tab = active ?: return
+        if (tab.doc.loadMode == LoadMode.READONLY_LARGE) return
+        val f = tab.field
+        val text = f.text
+        val lines = text.split('\n').toMutableList()
+        val cur = lineIndexOf(text, f.selection.start).coerceIn(0, lines.lastIndex)
+        lines.removeAt(cur)
+        val newText = lines.joinToString("\n")
+        val idx = cur.coerceIn(0, (lines.size - 1).coerceAtLeast(0))
+        var offset = 0
+        for (i in 0 until idx) offset += lines[i].length + 1
+        tab.pushUndo(f)
+        tab.field = TextFieldValue(newText, selection = androidx.compose.ui.text.TextRange(offset.coerceIn(0, newText.length)))
+        refreshStats(tab)
+    }
+
+    /** Move the caret's line up one position. */
+    fun moveLineUp() = moveLine(-1)
+
+    /** Move the caret's line down one position. */
+    fun moveLineDown() = moveLine(1)
+
+    private fun moveLine(delta: Int) {
+        val tab = active ?: return
+        if (tab.doc.loadMode == LoadMode.READONLY_LARGE) return
+        val f = tab.field
+        val text = f.text
+        val lines = text.split('\n').toMutableList()
+        val cur = lineIndexOf(text, f.selection.start).coerceIn(0, lines.lastIndex)
+        val target = cur + delta
+        if (target < 0 || target > lines.lastIndex) return
+        val tmp = lines[cur]; lines[cur] = lines[target]; lines[target] = tmp
+        val newText = lines.joinToString("\n")
+        var offset = 0
+        for (i in 0 until target) offset += lines[i].length + 1
+        tab.pushUndo(f)
+        tab.field = TextFieldValue(newText, selection = androidx.compose.ui.text.TextRange(offset.coerceIn(0, newText.length)))
+        refreshStats(tab)
+    }
+
     /**
      * Apply [transform] to the block of whole lines touched by the selection, or
      * to the entire document when the selection is collapsed.
@@ -1011,6 +1059,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         const val DEFAULT_LINE_SPACING = 1.6f
         private const val AUTOSAVE_INTERVAL_MS = 30_000L
         private const val LARGE_PAGE_LINES = 5_000
+        private const val PDF_EXTRACT_LIMIT_BYTES = 50L * 1024 * 1024 // 50 MB
 
         fun humanSize(bytes: Long): String {
             if (bytes < 1024) return "$bytes B"

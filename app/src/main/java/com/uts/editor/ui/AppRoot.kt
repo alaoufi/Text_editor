@@ -259,6 +259,9 @@ fun AppRoot(
                     onDedupe = { viewModel.removeDuplicateLines() },
                     onTrim = { viewModel.trimTrailingWhitespace() },
                     onDuplicateLine = { viewModel.duplicateCurrentLine() },
+                    onMoveLineUp = { viewModel.moveLineUp() },
+                    onMoveLineDown = { viewModel.moveLineDown() },
+                    onDeleteLine = { viewModel.deleteCurrentLine() },
                     onUppercase = { viewModel.transformSelection { it.uppercase() } },
                     onLowercase = { viewModel.transformSelection { it.lowercase() } },
                 )
@@ -463,6 +466,9 @@ private fun CompactToolbar(
     onDedupe: () -> Unit,
     onTrim: () -> Unit,
     onDuplicateLine: () -> Unit,
+    onMoveLineUp: () -> Unit,
+    onMoveLineDown: () -> Unit,
+    onDeleteLine: () -> Unit,
     onUppercase: () -> Unit,
     onLowercase: () -> Unit,
 ) {
@@ -539,6 +545,9 @@ private fun CompactToolbar(
                     onDedupe = onDedupe,
                     onTrim = onTrim,
                     onDuplicateLine = onDuplicateLine,
+                    onMoveLineUp = onMoveLineUp,
+                    onMoveLineDown = onMoveLineDown,
+                    onDeleteLine = onDeleteLine,
                     onUppercase = onUppercase,
                     onLowercase = onLowercase,
                 )
@@ -566,6 +575,9 @@ private fun TransformMenu(
     onDedupe: () -> Unit,
     onTrim: () -> Unit,
     onDuplicateLine: () -> Unit,
+    onMoveLineUp: () -> Unit,
+    onMoveLineDown: () -> Unit,
+    onDeleteLine: () -> Unit,
     onUppercase: () -> Unit,
     onLowercase: () -> Unit,
 ) {
@@ -579,6 +591,9 @@ private fun TransformMenu(
             DropdownMenuItem(text = { Text(stringResource(R.string.transform_trim)) }, onClick = { open = false; onTrim() })
             HorizontalDivider()
             DropdownMenuItem(text = { Text(stringResource(R.string.transform_duplicate_line)) }, onClick = { open = false; onDuplicateLine() })
+            DropdownMenuItem(text = { Text(stringResource(R.string.transform_move_up)) }, onClick = { open = false; onMoveLineUp() })
+            DropdownMenuItem(text = { Text(stringResource(R.string.transform_move_down)) }, onClick = { open = false; onMoveLineDown() })
+            DropdownMenuItem(text = { Text(stringResource(R.string.transform_delete_line)) }, onClick = { open = false; onDeleteLine() })
             HorizontalDivider()
             DropdownMenuItem(text = { Text(stringResource(R.string.format_uppercase)) }, onClick = { open = false; onUppercase() })
             DropdownMenuItem(text = { Text(stringResource(R.string.format_lowercase)) }, onClick = { open = false; onLowercase() })

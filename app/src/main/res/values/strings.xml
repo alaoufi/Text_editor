@@ -58,6 +58,9 @@
     <string name="transform_dedupe">Remove duplicate lines</string>
     <string name="transform_trim">Trim trailing spaces</string>
     <string name="transform_duplicate_line">Duplicate line</string>
+    <string name="transform_move_up">Move line up</string>
+    <string name="transform_move_down">Move line down</string>
+    <string name="transform_delete_line">Delete line</string>
 
     <!-- Editor / status -->
     <string name="untitled">Untitled</string>

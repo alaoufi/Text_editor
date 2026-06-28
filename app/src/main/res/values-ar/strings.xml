@@ -58,6 +58,9 @@
     <string name="transform_dedupe">حذف الأسطر المكرّرة</string>
     <string name="transform_trim">إزالة المسافات الزائدة</string>
     <string name="transform_duplicate_line">تكرار السطر</string>
+    <string name="transform_move_up">نقل السطر لأعلى</string>
+    <string name="transform_move_down">نقل السطر لأسفل</string>
+    <string name="transform_delete_line">حذف السطر</string>
 
     <!-- Editor / status -->
     <string name="untitled">بدون عنوان</string>
