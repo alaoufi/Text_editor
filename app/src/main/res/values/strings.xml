@@ -17,6 +17,10 @@
     <string name="action_goto_line">Go to line</string>
     <string name="action_syntax_language">Syntax language</string>
     <string name="action_settings">Settings</string>
+    <string name="action_check_updates">Check for updates</string>
+    <string name="update_available_title">Update available: %1$s</string>
+    <string name="update_download_install">Download &amp; install</string>
+    <string name="update_downloading">Downloading update…</string>
     <string name="action_close">Close</string>
     <string name="action_undo">Undo</string>
     <string name="action_redo">Redo</string>

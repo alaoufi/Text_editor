@@ -2,5 +2,6 @@
 <paths>
     <cache-path name="shared" path="shared/" />
     <cache-path name="exports" path="exports/" />
+    <cache-path name="updates" path="updates/" />
     <files-path name="recovery" path="recovery/" />
 </paths>

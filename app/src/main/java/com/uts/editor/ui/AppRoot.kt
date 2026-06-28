@@ -239,6 +239,7 @@ fun AppRoot(
                     onExportHtml = { menuOpen = false; exportHtmlLauncher.launch((active?.doc?.displayName?.substringBeforeLast('.') ?: "document") + ".html") },
                     onPrint = { menuOpen = false; active?.let { PrintHelper.print(context, it.doc.displayName, it.field.text) } },
                     onSettings = { menuOpen = false; showSettings = true },
+                    onCheckUpdates = { menuOpen = false; viewModel.checkForUpdates(announceNone = true) },
                     lineSpacing = viewModel.caretLineSpacing(),
                     currentAlign = viewModel.caretLineAlignment(),
                     onUndo = { viewModel.undo() },
@@ -361,6 +362,16 @@ fun AppRoot(
             )
         }
 
+        viewModel.updateInfo?.let { info ->
+            UpdateDialog(
+                versionName = info.versionName,
+                notes = info.notes,
+                busy = viewModel.updateBusy,
+                onInstall = { viewModel.downloadAndInstallUpdate() },
+                onDismiss = { viewModel.dismissUpdate() },
+            )
+        }
+
         if (showLanguage && active != null) {
             LanguageDialog(
                 current = active.doc.language,
@@ -446,6 +457,7 @@ private fun CompactToolbar(
     onExportHtml: () -> Unit,
     onPrint: () -> Unit,
     onSettings: () -> Unit,
+    onCheckUpdates: () -> Unit,
     lineSpacing: Float,
     currentAlign: Int,
     onUndo: () -> Unit,
@@ -513,6 +525,7 @@ private fun CompactToolbar(
                     DropdownMenuItem(text = { Text(stringResource(R.string.action_export_pdf)) }, onClick = onExportPdf)
                     DropdownMenuItem(text = { Text(stringResource(R.string.action_print)) }, onClick = onPrint)
                     DropdownMenuItem(text = { Text(stringResource(R.string.action_settings)) }, onClick = onSettings)
+                    DropdownMenuItem(text = { Text(stringResource(R.string.action_check_updates)) }, onClick = onCheckUpdates)
                 }
             }
             ToolDivider()

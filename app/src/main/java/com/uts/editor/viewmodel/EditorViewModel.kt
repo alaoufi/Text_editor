@@ -9,13 +9,16 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.uts.editor.BuildConfig
 import com.uts.editor.data.EncodingDetector
 import com.uts.editor.data.FileIo
 import com.uts.editor.data.PdfExtractor
 import com.uts.editor.data.RecoveryStore
 import com.uts.editor.data.SettingsStore
+import com.uts.editor.data.UpdateChecker
 import com.uts.editor.data.WordExtractor
 import com.uts.editor.data.ZipSupport
 import com.uts.editor.model.DocumentState
@@ -58,6 +61,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var recoverableDrafts by mutableStateOf<List<RecoveryStore.Draft>>(emptyList())
         private set
+    var updateInfo by mutableStateOf<UpdateChecker.UpdateInfo?>(null)
+        private set
+    var updateBusy by mutableStateOf(false)
+        private set
 
     private val _messages = MutableSharedFlow<UiMessage>(extraBufferCapacity = 8)
     val messages: SharedFlow<UiMessage> = _messages.asSharedFlow()
@@ -66,6 +73,46 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         recoverableDrafts = recovery.pending()
         startAutosaveLoop()
         if (tabs.isEmpty() && recoverableDrafts.isEmpty()) newDocument()
+        // Silent check on launch; only surfaces a dialog if a newer build exists.
+        checkForUpdates(announceNone = false)
+    }
+
+    // -------------------------------------------------------------- updates
+
+    /** Look for a newer GitHub release; shows the update dialog if one is found. */
+    fun checkForUpdates(announceNone: Boolean) {
+        viewModelScope.launch {
+            val info = withContext(Dispatchers.IO) {
+                runCatching { UpdateChecker.check(BuildConfig.VERSION_NAME) }.getOrNull()
+            }
+            if (info != null) updateInfo = info
+            else if (announceNone) emit("You're on the latest version.")
+        }
+    }
+
+    fun dismissUpdate() { updateInfo = null }
+
+    /** Download the update APK and hand it to the system package installer. */
+    fun downloadAndInstallUpdate() {
+        val info = updateInfo ?: return
+        viewModelScope.launch {
+            updateBusy = true
+            try {
+                val ctx = getApplication<Application>()
+                val apk = withContext(Dispatchers.IO) { UpdateChecker.downloadApk(ctx, info.apkUrl) }
+                val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", apk)
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                ctx.startActivity(intent)
+                updateInfo = null
+            } catch (e: Exception) {
+                emit("Update failed: ${e.message}")
+            } finally {
+                updateBusy = false
+            }
+        }
     }
 
     // ----------------------------------------------------------------- tabs

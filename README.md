@@ -62,6 +62,8 @@ releases:
 - **Status bar**: line numbers, word / character / line counts, file size,
   current encoding, and caret position.
 - **Crash-safe autosave** every 30 seconds with **recovery on next launch**.
+- **In-app updates**: checks GitHub Releases for a newer build and downloads &
+  installs the APK from inside the app (also available from the ⋮ menu).
 - **Full Arabic & English UI** with **in-app language switching** (no reinstall).
 - Android 8.0 (API 26) → 14, phones and tablets, small and large screens.
 
