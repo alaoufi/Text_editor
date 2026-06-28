@@ -13,10 +13,20 @@ any world encoding.
 
 ## Download / التحميل
 
-Pre-built signed APK: [`dist/GlobalTextEditor-v1.5-release.apk`](dist/GlobalTextEditor-v1.5-release.apk) (~1.4 MB).
+Pre-built APKs are produced by CI on every push and attached to tagged
+releases:
 
-> The release is signed with the self-signed key in `release.keystore` (dev key).
-> **Replace it with your own keystore before publishing to Google Play.**
+- **Latest build:** the **Actions** tab → newest run → `GlobalTextEditor-release`
+  artifact.
+- **Tagged release:** the **Releases** page (a signed APK is attached
+  automatically when a `v*` tag is pushed).
+
+> CI builds are signed with the self-signed key in `release.keystore` (dev key)
+> unless production signing secrets are configured (see **Production signing**
+> below). **Use your own keystore before publishing to Google Play.**
+
+نسخ APK الجاهزة يبنيها CI مع كل دفعة، وتُرفق بالإصدارات الموسومة: من تبويب
+**Actions** (أحدث تشغيل) أو من صفحة **Releases** عند دفع وسم `v*`.
 
 ## Features / المزايا
 
