@@ -361,6 +361,15 @@ fun AppRoot(
             )
         }
 
+        viewModel.lastCrash?.let { trace ->
+            val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+            CrashDialog(
+                trace = trace,
+                onCopy = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(trace)) },
+                onDismiss = { viewModel.clearCrash() },
+            )
+        }
+
         viewModel.pdfViewer?.let { req ->
             PdfImageViewer(
                 request = req,

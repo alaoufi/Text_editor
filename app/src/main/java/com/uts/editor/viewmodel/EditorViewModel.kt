@@ -13,6 +13,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.uts.editor.BuildConfig
+import com.uts.editor.UtsApplication
 import com.uts.editor.data.EncodingDetector
 import com.uts.editor.data.FileIo
 import com.uts.editor.data.PdfExtractor
@@ -73,6 +74,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var ocrProgress by mutableStateOf(0 to 0)
         private set
+    var lastCrash by mutableStateOf<String?>(null)
+        private set
 
     private val _messages = MutableSharedFlow<UiMessage>(extraBufferCapacity = 8)
     val messages: SharedFlow<UiMessage> = _messages.asSharedFlow()
@@ -83,6 +86,16 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         if (tabs.isEmpty() && recoverableDrafts.isEmpty()) newDocument()
         // Silent check on launch; only surfaces a dialog if a newer build exists.
         checkForUpdates(announceNone = false)
+        // Surface a previous crash's stack trace so it can be reported.
+        lastCrash = runCatching {
+            val f = java.io.File(app.filesDir, UtsApplication.CRASH_FILE)
+            if (f.exists()) f.readText().take(6000) else null
+        }.getOrNull()
+    }
+
+    fun clearCrash() {
+        runCatching { java.io.File(getApplication<Application>().filesDir, UtsApplication.CRASH_FILE).delete() }
+        lastCrash = null
     }
 
     // -------------------------------------------------------------- updates

@@ -24,6 +24,8 @@
     <string name="action_close">إغلاق</string>
     <string name="action_edit">تحرير</string>
     <string name="pdf_cannot_display">تعذّر عرض ملف PDF هذا.</string>
+    <string name="crash_title">أُغلق التطبيق بشكل غير متوقع سابقاً</string>
+    <string name="crash_copy">نسخ</string>
     <string name="action_undo">تراجع</string>
     <string name="action_redo">إعادة</string>
     <string name="action_menu">القائمة</string>

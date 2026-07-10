@@ -309,6 +309,28 @@ fun LanguageDialog(
 }
 
 @Composable
+fun CrashDialog(trace: String, onCopy: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onCopy) { Text(stringResource(R.string.crash_copy)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } },
+        title = { Text(stringResource(R.string.crash_title)) },
+        text = {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = trace,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(rememberScrollState())
+                        .padding(8.dp),
+                )
+            }
+        },
+    )
+}
+
+@Composable
 fun UpdateDialog(
     versionName: String,
     notes: String,
