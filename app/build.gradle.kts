@@ -107,7 +107,7 @@ dependencies {
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
     // On-device OCR (Tesseract) for extracting editable text from scanned PDFs.
-    implementation("cz.adaptech.tesseract4android:tesseract4android:4.7.0")
+    implementation("com.github.adaptech-cz.Tesseract4Android:tesseract4android:4.8.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
