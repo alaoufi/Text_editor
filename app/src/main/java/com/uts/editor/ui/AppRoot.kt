@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FormatAlignCenter
 import androidx.compose.material.icons.filled.FormatAlignJustify
 import androidx.compose.material.icons.filled.FormatAlignLeft
@@ -217,10 +218,14 @@ fun AppRoot(
                     .padding(padding)
             ) {
                 val readOnly = active?.doc?.loadMode == LoadMode.READONLY_LARGE
+                val reading = active?.reading == true
 
                 // One compact row: overflow menu (carries file actions + file name) + edit/format tools.
                 CompactToolbar(
-                    enabled = active != null && !readOnly,
+                    enabled = active != null && !readOnly && !reading,
+                    reading = reading,
+                    canEdit = active != null && !readOnly,
+                    onEdit = { viewModel.beginEdit() },
                     fileName = active?.doc?.displayName ?: stringResource(R.string.app_name),
                     modified = active?.isModified() == true,
                     menuOpen = menuOpen,
@@ -278,7 +283,7 @@ fun AppRoot(
                 if (viewModel.findState.visible) {
                     FindReplaceBar(
                         state = viewModel.findState,
-                        readOnly = readOnly,
+                        readOnly = readOnly || reading,
                         onQueryChange = { viewModel.updateFind(query = it) },
                         onReplacementChange = { viewModel.updateFind(replacement = it) },
                         onToggleRegex = { viewModel.updateFind(regex = it) },
@@ -303,7 +308,7 @@ fun AppRoot(
                             fontSizeSp = settings.fontSizeSp,
                             showLineNumbers = settings.lineNumbers,
                             wordWrap = settings.wordWrap,
-                            readOnly = readOnly,
+                            readOnly = readOnly || reading,
                             matches = viewModel.findState.matches,
                             currentMatch = viewModel.findState.current,
                             lineAligns = active.lineAligns.toMap(),
@@ -458,6 +463,9 @@ fun AppRoot(
 @Composable
 private fun CompactToolbar(
     enabled: Boolean,
+    reading: Boolean,
+    canEdit: Boolean,
+    onEdit: () -> Unit,
     fileName: String,
     modified: Boolean,
     menuOpen: Boolean,
@@ -547,6 +555,25 @@ private fun CompactToolbar(
                 }
             }
             ToolDivider()
+            if (reading) {
+                // Reading mode: read-only view. Only Find + a prominent Edit button.
+                Row(
+                    Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ToolButton(Icons.Filled.Search, R.string.action_find, onClick = onFind)
+                }
+                androidx.compose.material3.Button(
+                    onClick = onEdit,
+                    enabled = canEdit,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                    modifier = Modifier.padding(end = 6.dp),
+                ) {
+                    Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.action_edit))
+                }
+            } else {
             // Scrollable tools.
             Row(
                 Modifier.weight(1f).horizontalScroll(rememberScrollState()),
@@ -583,6 +610,7 @@ private fun CompactToolbar(
                     onLowercase = onLowercase,
                 )
                 ToolButton(Icons.Filled.Mic, R.string.tool_voice, enabled = enabled, onClick = onVoice)
+            }
             }
         }
     }

@@ -141,7 +141,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     loadMode = LoadMode.EDITABLE, isModified = true,
                     stats = TextStats.of(normalized, normalized.toByteArray().size.toLong()),
                 )
-                val tab = EditorTab(doc, TextFieldValue(normalized)).also { it.savedSignature = -1 }
+                val tab = EditorTab(doc, TextFieldValue(normalized)).also { it.savedSignature = -1; it.reading = false }
                 tabs.add(tab); activeIndex = tabs.lastIndex
                 pdfViewer = null
                 emit("Text recognised via OCR — please review for accuracy.")
@@ -188,13 +188,23 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             language = SyntaxLanguage.PLAIN,
             stats = TextStats(),
         )
-        val tab = EditorTab(doc, TextFieldValue(""))
+        val tab = EditorTab(doc, TextFieldValue("")).also { it.reading = false }
         tabs.add(tab)
         activeIndex = tabs.lastIndex
     }
 
     fun switchTo(index: Int) {
         if (index in tabs.indices) activeIndex = index
+    }
+
+    /** Leave read-only reading mode and reveal the editing tools. */
+    fun beginEdit() {
+        val tab = active ?: return
+        if (tab.doc.loadMode == LoadMode.READONLY_LARGE) {
+            emit("This file is too large to edit; it stays read-only.")
+            return
+        }
+        tab.reading = false
     }
 
     /** Returns true if the tab was closed; false if it needs a discard confirmation. */
@@ -584,6 +594,12 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     fun onTextChange(newValue: TextFieldValue) {
         val tab = active ?: return
         if (tab.doc.loadMode == LoadMode.READONLY_LARGE) return
+        // In reading mode the field is read-only, so only selection changes arrive
+        // here (needed for select-to-copy); ignore any text change defensively.
+        if (tab.reading) {
+            if (newValue.text == tab.field.text) tab.field = newValue
+            return
+        }
         if (newValue.text != tab.field.text) {
             tab.pushUndo(tab.field)
             // Keep rich-text spans aligned to the edited text.
@@ -644,7 +660,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun applyAttr(sameAttr: (RichSpan) -> Boolean, make: ((Int, Int) -> RichSpan)?) {
         val tab = active ?: return
-        if (tab.doc.loadMode == LoadMode.READONLY_LARGE) return
+        if (tab.doc.loadMode == LoadMode.READONLY_LARGE || tab.reading) return
         val r = formatRange(tab)
         val s = r.first; val e = r.last + 1
         if (s >= e) return
@@ -662,7 +678,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     /** Remove all formatting overlapping the selection/current paragraph. */
     fun clearFormatting() {
         val tab = active ?: return
-        if (tab.doc.loadMode == LoadMode.READONLY_LARGE) return
+        if (tab.doc.loadMode == LoadMode.READONLY_LARGE || tab.reading) return
         val r = formatRange(tab)
         val s = r.first; val e = r.last + 1
         val kept = tab.spans.flatMap { sp ->
@@ -700,7 +716,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     /** Wrap the current selection (or insert at caret) with [prefix]/[suffix]. */
     fun wrapSelection(prefix: String, suffix: String) {
         val tab = active ?: return
-        if (tab.doc.loadMode == LoadMode.READONLY_LARGE) return
+        if (tab.doc.loadMode == LoadMode.READONLY_LARGE || tab.reading) return
         val f = tab.field
         val start = minOf(f.selection.start, f.selection.end)
         val end = maxOf(f.selection.start, f.selection.end)
@@ -716,7 +732,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     /** Add [prefix] to the start of every line touched by the selection. */
     fun prefixLines(prefix: String) {
         val tab = active ?: return
-        if (tab.doc.loadMode == LoadMode.READONLY_LARGE) return
+        if (tab.doc.loadMode == LoadMode.READONLY_LARGE || tab.reading) return
         val f = tab.field
         val text = f.text
         val selStart = minOf(f.selection.start, f.selection.end)
@@ -737,7 +753,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     /** Change the case of the selected text. */
     fun transformSelection(transform: (String) -> String) {
         val tab = active ?: return
-        if (tab.doc.loadMode == LoadMode.READONLY_LARGE) return
+        if (tab.doc.loadMode == LoadMode.READONLY_LARGE || tab.reading) return
         val f = tab.field
         val start = minOf(f.selection.start, f.selection.end)
         val end = maxOf(f.selection.start, f.selection.end)
@@ -797,7 +813,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     /** Insert [insertText] at the caret, replacing any selection (used by voice input). */
     fun insertAtCursor(insertText: String) {
         val tab = active ?: return
-        if (tab.doc.loadMode == LoadMode.READONLY_LARGE) return
+        if (tab.doc.loadMode == LoadMode.READONLY_LARGE || tab.reading) return
         val f = tab.field
         val start = minOf(f.selection.start, f.selection.end)
         val end = maxOf(f.selection.start, f.selection.end)
@@ -827,7 +843,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     /** Duplicate the line the caret is on, placing the copy directly below it. */
     fun duplicateCurrentLine() {
         val tab = active ?: return
-        if (tab.doc.loadMode == LoadMode.READONLY_LARGE) return
+        if (tab.doc.loadMode == LoadMode.READONLY_LARGE || tab.reading) return
         val f = tab.field
         val text = f.text
         val pos = f.selection.start.coerceIn(0, text.length)
@@ -846,7 +862,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     /** Delete the line the caret is on. */
     fun deleteCurrentLine() {
         val tab = active ?: return
-        if (tab.doc.loadMode == LoadMode.READONLY_LARGE) return
+        if (tab.doc.loadMode == LoadMode.READONLY_LARGE || tab.reading) return
         val f = tab.field
         val text = f.text
         val lines = text.split('\n').toMutableList()
@@ -869,7 +885,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun moveLine(delta: Int) {
         val tab = active ?: return
-        if (tab.doc.loadMode == LoadMode.READONLY_LARGE) return
+        if (tab.doc.loadMode == LoadMode.READONLY_LARGE || tab.reading) return
         val f = tab.field
         val text = f.text
         val lines = text.split('\n').toMutableList()
@@ -891,7 +907,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun transformLineBlock(transform: (List<String>) -> List<String>) {
         val tab = active ?: return
-        if (tab.doc.loadMode == LoadMode.READONLY_LARGE) return
+        if (tab.doc.loadMode == LoadMode.READONLY_LARGE || tab.reading) return
         val f = tab.field
         val text = f.text
         val hasSelection = f.selection.start != f.selection.end
@@ -1086,7 +1102,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun replaceCurrent() {
         val tab = active ?: return
-        if (tab.doc.loadMode == LoadMode.READONLY_LARGE) return
+        if (tab.doc.loadMode == LoadMode.READONLY_LARGE || tab.reading) return
         val idx = findState.current
         val range = findState.matches.getOrNull(idx) ?: return
         val text = tab.field.text
@@ -1103,7 +1119,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun replaceAll() {
         val tab = active ?: return
-        if (tab.doc.loadMode == LoadMode.READONLY_LARGE) return
+        if (tab.doc.loadMode == LoadMode.READONLY_LARGE || tab.reading) return
         val pattern = buildPattern(findState.query) ?: return
         val text = tab.field.text
         val newText = if (findState.regex) {
@@ -1165,7 +1181,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 encoding = enc, lineEnding = ending, language = SyntaxLanguage.fromFileName(draft.displayName),
                 isModified = true, stats = TextStats.of(draft.content, draft.content.length.toLong()),
             )
-            val tab = EditorTab(doc, TextFieldValue(draft.content)).also { it.savedSignature = -1 }
+            val tab = EditorTab(doc, TextFieldValue(draft.content)).also { it.savedSignature = -1; it.reading = false }
             tabs.add(tab)
         }
         if (tabs.isNotEmpty()) activeIndex = tabs.lastIndex

@@ -80,6 +80,11 @@ class EditorTab(initialDoc: DocumentState, initialField: TextFieldValue) {
     var doc by mutableStateOf(initialDoc)
     var field by mutableStateOf(initialField)
 
+    /** Read-only reading view: opened files start here with no editing tools;
+     *  the Edit button turns it off to reveal the toolbar. New/blank documents
+     *  set this to false so they are editable immediately. */
+    var reading by mutableStateOf(true)
+
     /** Hash + length of the last saved content, for modified detection. */
     var savedSignature: Long = signatureOf(initialField.text)
 
