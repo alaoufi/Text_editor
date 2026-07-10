@@ -19,7 +19,30 @@ object OcrHelper {
         "https://github.com/tesseract-ocr/tessdata_fast/raw/main/"
 
     /** Width (px) each page is rendered at before OCR — higher = more accurate, slower. */
-    private const val OCR_WIDTH = 1700
+    private const val OCR_WIDTH = 1400
+
+    /** OCR a single page (fast). Returns the recognised text. */
+    fun recognizePage(
+        context: Context,
+        uri: Uri,
+        langs: String,
+        pageIndex: Int,
+    ): String {
+        val dataPath = ensureLanguages(context, langs.split("+"))
+        val pages = PdfRenderHelper.open(context, uri) ?: return ""
+        val tess = TessBaseAPI()
+        try {
+            if (!tess.init(dataPath.absolutePath, langs)) return ""
+            val bmp = pages.render(pageIndex, OCR_WIDTH) ?: return ""
+            tess.setImage(bmp)
+            val text = tess.getUTF8Text() ?: ""
+            bmp.recycle()
+            return text.trim()
+        } finally {
+            runCatching { tess.recycle() }
+            pages.close()
+        }
+    }
 
     /** Ensure the language data exists locally; returns the Tesseract data path. */
     fun ensureLanguages(context: Context, langs: List<String>): File {

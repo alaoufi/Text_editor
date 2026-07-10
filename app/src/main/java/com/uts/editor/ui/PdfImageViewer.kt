@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
@@ -57,11 +58,12 @@ fun PdfImageViewer(
     request: PdfViewRequest,
     ocrRunning: Boolean,
     ocrProgress: Pair<Int, Int>,
-    onOcr: () -> Unit,
+    onOcr: (Int) -> Unit,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
+    val listState = rememberLazyListState()
 
     Dialog(
         onDismissRequest = { if (!ocrRunning) onClose() },
@@ -84,7 +86,7 @@ fun PdfImageViewer(
                             style = MaterialTheme.typography.titleSmall,
                             modifier = Modifier.weight(1f).padding(horizontal = 6.dp),
                         )
-                        Button(onClick = onOcr, enabled = !ocrRunning) {
+                        Button(onClick = { onOcr(listState.firstVisibleItemIndex) }, enabled = !ocrRunning) {
                             if (ocrRunning) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(18.dp),
@@ -133,7 +135,7 @@ fun PdfImageViewer(
                     }
                     else -> BoxWithConstraints(Modifier.fillMaxSize()) {
                         val widthPx = with(density) { maxWidth.toPx() }.toInt().coerceIn(1, 2048)
-                        LazyColumn(Modifier.fillMaxSize()) {
+                        LazyColumn(Modifier.fillMaxSize(), state = listState) {
                             items(current.pageCount) { index ->
                                 PdfPageView(current, index, widthPx)
                             }

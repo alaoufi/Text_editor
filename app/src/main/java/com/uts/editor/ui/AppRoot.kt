@@ -380,7 +380,7 @@ fun AppRoot(
                 request = req,
                 ocrRunning = viewModel.ocrRunning,
                 ocrProgress = viewModel.ocrProgress,
-                onOcr = { viewModel.ocrActivePdf() },
+                onOcr = { pageIndex -> viewModel.ocrActivePdf(pageIndex) },
                 onClose = { viewModel.closePdfViewer() },
             )
         }

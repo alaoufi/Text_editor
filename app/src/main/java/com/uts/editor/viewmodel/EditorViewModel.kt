@@ -117,23 +117,21 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun closePdfViewer() { if (!ocrRunning) pdfViewer = null }
 
-    /** Run OCR on the PDF being viewed and open the recognised text for editing. */
-    fun ocrActivePdf() {
+    /** OCR the page currently being viewed and open the recognised text for editing. */
+    fun ocrActivePdf(pageIndex: Int) {
         val req = pdfViewer ?: return
         if (ocrRunning) return
         viewModelScope.launch {
             ocrRunning = true
-            ocrProgress = 0 to 0
+            ocrProgress = 0 to 1
             try {
                 val ctx = getApplication<Application>()
                 val text = withContext(Dispatchers.IO) {
-                    OcrHelper.recognizePdf(ctx, req.uri, "ara+eng") { done, total ->
-                        ocrProgress = done to total
-                    }
+                    OcrHelper.recognizePage(ctx, req.uri, "ara+eng", pageIndex)
                 }
-                if (text.isBlank()) { emit("OCR could not recognise any text."); return@launch }
+                if (text.isBlank()) { emit("OCR could not recognise any text on this page."); return@launch }
                 val (normalized, ending) = normalizeIn(text)
-                val baseName = req.name.substringBeforeLast('.') + ".txt"
+                val baseName = req.name.substringBeforeLast('.') + "-p${pageIndex + 1}.txt"
                 val id = UUID.randomUUID().toString()
                 val doc = DocumentState(
                     id = id, uri = null, displayName = baseName, encoding = TextEncoding.UTF_8,
@@ -144,7 +142,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 val tab = EditorTab(doc, TextFieldValue(normalized)).also { it.savedSignature = -1; it.reading = false }
                 tabs.add(tab); activeIndex = tabs.lastIndex
                 pdfViewer = null
-                emit("Text recognised via OCR — please review for accuracy.")
+                emit("Page ${pageIndex + 1} recognised via OCR — please review for accuracy.")
             } catch (e: Throwable) {
                 emit("OCR failed: ${e.message}")
             } finally {
