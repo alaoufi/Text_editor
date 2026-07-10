@@ -28,6 +28,7 @@ import com.uts.editor.model.LoadMode
 import com.uts.editor.model.SyntaxLanguage
 import com.uts.editor.model.TextEncoding
 import com.uts.editor.model.TextStats
+import com.uts.editor.util.OcrHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -66,6 +67,12 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var updateBusy by mutableStateOf(false)
         private set
+    var pdfViewer by mutableStateOf<PdfViewRequest?>(null)
+        private set
+    var ocrRunning by mutableStateOf(false)
+        private set
+    var ocrProgress by mutableStateOf(0 to 0)
+        private set
 
     private val _messages = MutableSharedFlow<UiMessage>(extraBufferCapacity = 8)
     val messages: SharedFlow<UiMessage> = _messages.asSharedFlow()
@@ -92,6 +99,46 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun dismissUpdate() { updateInfo = null }
+
+    // ----------------------------------------------------- PDF image viewer
+
+    fun closePdfViewer() { if (!ocrRunning) pdfViewer = null }
+
+    /** Run OCR on the PDF being viewed and open the recognised text for editing. */
+    fun ocrActivePdf() {
+        val req = pdfViewer ?: return
+        if (ocrRunning) return
+        viewModelScope.launch {
+            ocrRunning = true
+            ocrProgress = 0 to 0
+            try {
+                val ctx = getApplication<Application>()
+                val text = withContext(Dispatchers.IO) {
+                    OcrHelper.recognizePdf(ctx, req.uri, "ara+eng") { done, total ->
+                        ocrProgress = done to total
+                    }
+                }
+                if (text.isBlank()) { emit("OCR could not recognise any text."); return@launch }
+                val (normalized, ending) = normalizeIn(text)
+                val baseName = req.name.substringBeforeLast('.') + ".txt"
+                val id = UUID.randomUUID().toString()
+                val doc = DocumentState(
+                    id = id, uri = null, displayName = baseName, encoding = TextEncoding.UTF_8,
+                    lineEnding = ending, language = SyntaxLanguage.PLAIN,
+                    loadMode = LoadMode.EDITABLE, isModified = true,
+                    stats = TextStats.of(normalized, normalized.toByteArray().size.toLong()),
+                )
+                val tab = EditorTab(doc, TextFieldValue(normalized)).also { it.savedSignature = -1 }
+                tabs.add(tab); activeIndex = tabs.lastIndex
+                pdfViewer = null
+                emit("Text recognised via OCR — please review for accuracy.")
+            } catch (e: Exception) {
+                emit("OCR failed: ${e.message}")
+            } finally {
+                ocrRunning = false
+            }
+        }
+    }
 
     /** Download the update APK and hand it to the system package installer. */
     fun downloadAndInstallUpdate() {
@@ -336,7 +383,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val text = withContext(Dispatchers.IO) { PdfExtractor.extract(resolver, uri) }
                 if (text.isBlank()) {
-                    emit("No readable text found in \"$name\" (it may be scanned images).")
+                    // Image-only (scanned) PDF: show it as page images (read-only);
+                    // the viewer's Edit button runs OCR to get editable text.
+                    pdfViewer = PdfViewRequest(uri, name)
+                    emit("This PDF has no selectable text — showing pages as images. Tap Edit for OCR.")
                     return@launch
                 }
                 val (normalized, ending) = normalizeIn(text)
@@ -1176,3 +1226,6 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 }
+
+/** A request to view a (typically scanned) PDF as page images. */
+data class PdfViewRequest(val uri: Uri, val name: String)

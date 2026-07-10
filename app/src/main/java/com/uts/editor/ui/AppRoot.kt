@@ -361,6 +361,16 @@ fun AppRoot(
             )
         }
 
+        viewModel.pdfViewer?.let { req ->
+            PdfImageViewer(
+                request = req,
+                ocrRunning = viewModel.ocrRunning,
+                ocrProgress = viewModel.ocrProgress,
+                onOcr = { viewModel.ocrActivePdf() },
+                onClose = { viewModel.closePdfViewer() },
+            )
+        }
+
         viewModel.updateInfo?.let { info ->
             UpdateDialog(
                 versionName = info.versionName,

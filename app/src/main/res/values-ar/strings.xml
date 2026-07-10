@@ -22,6 +22,7 @@
     <string name="update_download_install">تنزيل وتثبيت</string>
     <string name="update_downloading">جارٍ تنزيل التحديث…</string>
     <string name="action_close">إغلاق</string>
+    <string name="action_edit">تحرير</string>
     <string name="action_undo">تراجع</string>
     <string name="action_redo">إعادة</string>
     <string name="action_menu">القائمة</string>

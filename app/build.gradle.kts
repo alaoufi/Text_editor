@@ -12,8 +12,8 @@ android {
         applicationId = "com.uts.editor"
         minSdk = 26
         targetSdk = 34
-        versionCode = 12
-        versionName = "2.1"
+        versionCode = 13
+        versionName = "2.2"
         vectorDrawables { useSupportLibrary = true }
         // Keep app lightweight: only ship the resources we use.
         resourceConfigurations += listOf("en", "ar")
@@ -105,6 +105,9 @@ dependencies {
 
     // PDF text extraction (Apache PDFBox, Android port) for opening PDFs as text.
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+
+    // On-device OCR (Tesseract) for extracting editable text from scanned PDFs.
+    implementation("cz.adaptech.tesseract4android:tesseract4android:4.7.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

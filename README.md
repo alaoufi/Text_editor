@@ -62,6 +62,9 @@ releases:
   tab-separated table (shared strings, cell types, columns, multiple sheets).
   Legacy binary `.doc`/`.xls` are recovered best-effort. Formatting is not
   preserved.
+- **Scanned PDFs**: image-only PDFs open in a read-only page-image viewer;
+  tapping **Edit** runs on-device **OCR** (Tesseract, Arabic + English) to turn
+  the pages into editable text.
 - **Status bar**: line numbers, word / character / line counts, file size,
   current encoding, and caret position.
 - **Crash-safe autosave** every 30 seconds with **recovery on next launch**.
