@@ -1,6 +1,7 @@
 package com.uts.editor
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -45,6 +46,14 @@ class MainActivity : ComponentActivity() {
             // Defer until the ViewModel exists.
             window.decorView.post { viewModel?.handleViewIntent(intent) }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // The activity is singleTask, so a shared/opened file while it is already
+        // running arrives here instead of onCreate.
+        setIntent(intent)
+        window.decorView.post { viewModel?.handleViewIntent(intent) }
     }
 
     override fun onStop() {
