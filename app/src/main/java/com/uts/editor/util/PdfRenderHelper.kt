@@ -27,17 +27,23 @@ object PdfRenderHelper {
     }.getOrNull()
 }
 
-/** A live PDF handle. Not thread-safe internally, so [render] is synchronized. */
+/** A live PDF handle. Not thread-safe internally, so access is synchronized. */
 class PdfPages(
     private val renderer: PdfRenderer,
     private val pfd: ParcelFileDescriptor,
     private val file: File,
 ) {
-    val pageCount: Int get() = renderer.pageCount
+    // Captured once at construction: reading it never touches the (possibly
+    // closed) renderer again, which previously crashed with "Already closed".
+    val pageCount: Int = renderer.pageCount
 
+    private var closed = false
+
+    /** Render a page, or null if the document has been closed or the page fails. */
     @Synchronized
-    fun render(index: Int, widthPx: Int): Bitmap {
-        val page = renderer.openPage(index)
+    fun render(index: Int, widthPx: Int): Bitmap? {
+        if (closed || index < 0 || index >= pageCount) return null
+        val page = try { renderer.openPage(index) } catch (e: Throwable) { return null }
         try {
             var w = widthPx.coerceIn(1, MAX_DIM)
             var h = (page.height * (w.toFloat() / page.width)).toInt().coerceAtLeast(1)
@@ -52,19 +58,24 @@ class PdfPages(
             bmp.eraseColor(Color.WHITE)
             page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
             return bmp
+        } catch (e: Throwable) {
+            return null
         } finally {
-            page.close()
+            runCatching { page.close() }
         }
+    }
+
+    @Synchronized
+    fun close() {
+        if (closed) return
+        closed = true
+        runCatching { renderer.close() }
+        runCatching { pfd.close() }
+        runCatching { file.delete() }
     }
 
     private companion object {
         /** Conservative max texture dimension supported by essentially all GPUs. */
         const val MAX_DIM = 2048
-    }
-
-    fun close() {
-        runCatching { renderer.close() }
-        runCatching { pfd.close() }
-        runCatching { file.delete() }
     }
 }
