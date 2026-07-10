@@ -23,6 +23,7 @@
     <string name="update_downloading">Downloading update…</string>
     <string name="action_close">Close</string>
     <string name="action_edit">Edit</string>
+    <string name="action_stop_edit">Stop editing</string>
     <string name="pdf_cannot_display">This PDF could not be displayed.</string>
     <string name="pdf_page_failed">Page %1$d could not be rendered</string>
     <string name="crash_title">The app closed unexpectedly last time</string>

@@ -205,6 +205,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         tab.reading = false
     }
 
+    /** Stop editing and go back to the read-only reading view. */
+    fun stopEdit() { active?.reading = true }
+
     /** Returns true if the tab was closed; false if it needs a discard confirmation. */
     fun requestCloseTab(index: Int): Boolean {
         val tab = tabs.getOrNull(index) ?: return true

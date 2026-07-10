@@ -23,6 +23,7 @@
     <string name="update_downloading">جارٍ تنزيل التحديث…</string>
     <string name="action_close">إغلاق</string>
     <string name="action_edit">تحرير</string>
+    <string name="action_stop_edit">إيقاف التحرير</string>
     <string name="pdf_cannot_display">تعذّر عرض ملف PDF هذا.</string>
     <string name="pdf_page_failed">تعذّر رسم الصفحة %1$d</string>
     <string name="crash_title">أُغلق التطبيق بشكل غير متوقع سابقاً</string>

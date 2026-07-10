@@ -226,6 +226,7 @@ fun AppRoot(
                     reading = reading,
                     canEdit = active != null && !readOnly,
                     onEdit = { viewModel.beginEdit() },
+                    onStopEdit = { viewModel.stopEdit() },
                     fileName = active?.doc?.displayName ?: stringResource(R.string.app_name),
                     modified = active?.isModified() == true,
                     menuOpen = menuOpen,
@@ -466,6 +467,7 @@ private fun CompactToolbar(
     reading: Boolean,
     canEdit: Boolean,
     onEdit: () -> Unit,
+    onStopEdit: () -> Unit,
     fileName: String,
     modified: Boolean,
     menuOpen: Boolean,
@@ -574,6 +576,9 @@ private fun CompactToolbar(
                     Text(stringResource(R.string.action_edit))
                 }
             } else {
+            // Stop editing → back to the read-only reading view.
+            ToolButton(Icons.Filled.Close, R.string.action_stop_edit, onClick = onStopEdit)
+            ToolDivider()
             // Scrollable tools.
             Row(
                 Modifier.weight(1f).horizontalScroll(rememberScrollState()),
