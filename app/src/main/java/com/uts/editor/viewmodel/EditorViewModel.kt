@@ -400,44 +400,13 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Open a PDF by extracting its text (view & copy; not PDF editing). */
+    /**
+     * Open a PDF in the page-image viewer so the layout matches a real PDF
+     * reader exactly (text extraction reorders/garbles tables and RTL text).
+     * The viewer's Edit button OCRs the current page into editable text.
+     */
     private fun openPdf(uri: Uri, name: String) {
-        viewModelScope.launch {
-            isBusy = true
-            try {
-                // Any extraction failure (including OutOfMemoryError on image-heavy
-                // PDFs) falls back to the read-only image viewer instead of crashing.
-                val text = withContext(Dispatchers.IO) {
-                    runCatching { PdfExtractor.extract(resolver, uri) }.getOrDefault("")
-                }
-                // Scanned PDFs (e.g. CamScanner) carry only a watermark text layer.
-                // If little real text remains after stripping such watermarks, treat
-                // the file as image-only and show the page-image viewer instead.
-                if (meaningfulPdfText(text).length < MIN_MEANINGFUL_PDF_CHARS) {
-                    pdfViewer = PdfViewRequest(uri, name)
-                    emit("This PDF looks scanned — showing pages as images. Tap Edit for OCR.")
-                    return@launch
-                }
-                val (normalized, ending) = normalizeIn(text)
-                // Present extracted text as a new editable .txt buffer (no source Uri,
-                // so saving goes through Save As to a real text file).
-                val baseName = name.substringBeforeLast('.') + ".txt"
-                val id = UUID.randomUUID().toString()
-                val doc = DocumentState(
-                    id = id, uri = null, displayName = baseName, encoding = TextEncoding.UTF_8,
-                    lineEnding = ending, language = SyntaxLanguage.PLAIN,
-                    loadMode = LoadMode.EDITABLE, isModified = true,
-                    stats = TextStats.of(normalized, normalized.toByteArray().size.toLong()),
-                )
-                val tab = EditorTab(doc, TextFieldValue(normalized)).also { it.savedSignature = -1 }
-                tabs.add(tab); activeIndex = tabs.lastIndex
-                emit("Text extracted from PDF (formatting not preserved).")
-            } catch (e: Throwable) {
-                emit("Could not read PDF: ${e.message}")
-            } finally {
-                isBusy = false
-            }
-        }
+        pdfViewer = PdfViewRequest(uri, name)
     }
 
     /** Open a spreadsheet by extracting its cells as a tab-separated table. */
