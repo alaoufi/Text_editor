@@ -154,9 +154,15 @@ private fun PdfPageView(pages: PdfPages, index: Int, widthPx: Int) {
             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp, horizontal = 4.dp),
         )
         done -> Box(
-            Modifier.fillMaxWidth().height(120.dp),
+            Modifier.fillMaxWidth().height(140.dp).padding(12.dp),
             contentAlignment = Alignment.Center,
-        ) { Text(stringResource(R.string.pdf_page_failed, index + 1)) }
+        ) {
+            Text(
+                stringResource(R.string.pdf_page_failed, index + 1) +
+                    (pages.lastError?.let { "\n$it" } ?: ""),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         else -> Box(
             Modifier.fillMaxWidth().height(360.dp),
             contentAlignment = Alignment.Center,

@@ -39,26 +39,39 @@ class PdfPages(
 
     private var closed = false
 
+    /** Populated with the reason when a [render] returns null, for diagnostics. */
+    @Volatile
+    var lastError: String? = null
+        private set
+
     /** Render a page, or null if the document has been closed or the page fails. */
     @Synchronized
     fun render(index: Int, widthPx: Int): Bitmap? {
-        if (closed || index < 0 || index >= pageCount) return null
-        val page = try { renderer.openPage(index) } catch (e: Throwable) { return null }
+        if (closed) { lastError = "closed"; return null }
+        if (index < 0 || index >= pageCount) { lastError = "bad index"; return null }
+        val page = try {
+            renderer.openPage(index)
+        } catch (e: Throwable) {
+            lastError = "openPage: ${e.javaClass.simpleName}: ${e.message}"
+            return null
+        }
         try {
+            val pw = if (page.width > 0) page.width else 1
+            val ph = if (page.height > 0) page.height else 1
             var w = widthPx.coerceIn(1, MAX_DIM)
-            var h = (page.height * (w.toFloat() / page.width)).toInt().coerceAtLeast(1)
-            // Keep both dimensions within the GPU texture limit so drawing the
-            // bitmap never crashes with "bitmap too large to be uploaded".
-            if (h > MAX_DIM) {
-                val s = MAX_DIM.toFloat() / h
+            var h = (ph * (w.toFloat() / pw)).toInt().coerceIn(1, MAX_DIM)
+            if (w * h > 4_000_000) {           // ~16 MB ARGB; scale down further
+                val s = kotlin.math.sqrt(4_000_000f / (w * h))
                 w = (w * s).toInt().coerceAtLeast(1)
-                h = MAX_DIM
+                h = (h * s).toInt().coerceAtLeast(1)
             }
             val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             bmp.eraseColor(Color.WHITE)
             page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            lastError = null
             return bmp
         } catch (e: Throwable) {
+            lastError = "render: ${e.javaClass.simpleName}: ${e.message}"
             return null
         } finally {
             runCatching { page.close() }
