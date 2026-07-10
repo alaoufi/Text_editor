@@ -38,8 +38,13 @@ object WordExtractor {
         s = s.replace(Regex("<w:tab\\b[^>]*/>"), "\t")
         s = s.replace(Regex("<w:br\\b[^>]*/?>"), "\n")
         s = s.replace(Regex("<w:cr\\b[^>]*/?>"), "\n")
+        // Preserve table structure: cells become tab-separated, rows newline-separated.
+        s = s.replace(Regex("</w:tc>"), "\t")
+        s = s.replace(Regex("</w:tr>"), "\n")
         s = s.replace(Regex("</w:p>"), "\n")
         s = s.replace(Regex("<[^>]+>"), "")
+        // Collapse the stray tab a table row leaves before its newline.
+        s = s.replace(Regex("\\t+\\n"), "\n")
         return unescapeXml(s).trimEnd('\n')
     }
 
@@ -95,8 +100,6 @@ object WordExtractor {
 
     // ---- DOC (binary OLE2) best-effort ----
 
-    private const val MIN_RUN = 4
-
     private fun extractDoc(resolver: ContentResolver, uri: Uri): String {
         val bytes = resolver.openInputStream(uri).use { input ->
             input ?: return ""
@@ -111,39 +114,6 @@ object WordExtractor {
             out.toByteArray()
         }
         // Recover UTF-16LE text runs (Word stores body text as UTF-16LE).
-        val best = listOf(recoverUtf16Runs(bytes, 0), recoverUtf16Runs(bytes, 1))
-            .maxByOrNull { it.length } ?: ""
-        return best.trim()
-    }
-
-    private fun recoverUtf16Runs(bytes: ByteArray, startParity: Int): String {
-        val sb = StringBuilder()
-        val run = StringBuilder()
-        var i = startParity
-        while (i + 1 < bytes.size) {
-            val code = (bytes[i].toInt() and 0xFF) or ((bytes[i + 1].toInt() and 0xFF) shl 8)
-            if (isReadable(code)) {
-                run.append(code.toChar())
-            } else {
-                flushRun(run, sb)
-            }
-            i += 2
-        }
-        flushRun(run, sb)
-        return sb.toString()
-    }
-
-    private fun isReadable(code: Int): Boolean =
-        code in 0x0600..0x06FF || code in 0x0750..0x077F ||   // Arabic
-            code in 0xFB50..0xFDFF || code in 0xFE70..0xFEFF ||  // Arabic presentation forms
-            code == 0x09 || code == 0x0A || code == 0x0D ||      // whitespace
-            code in 0x20..0x7E ||                                // ASCII printable
-            code in 0xA0..0x24F                                  // Latin-1/extended
-
-    private fun flushRun(run: StringBuilder, sb: StringBuilder) {
-        if (run.length >= MIN_RUN && run.any { it.isLetterOrDigit() }) {
-            sb.append(run).append('\n')
-        }
-        run.setLength(0)
+        return BinaryTextRecovery.recover(bytes)
     }
 }

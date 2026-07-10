@@ -18,6 +18,7 @@ import com.uts.editor.data.FileIo
 import com.uts.editor.data.PdfExtractor
 import com.uts.editor.data.RecoveryStore
 import com.uts.editor.data.SettingsStore
+import com.uts.editor.data.SpreadsheetExtractor
 import com.uts.editor.data.UpdateChecker
 import com.uts.editor.data.WordExtractor
 import com.uts.editor.data.ZipSupport
@@ -195,6 +196,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     openPdf(uri, meta.name)
                     return@launch
                 }
+                if (SpreadsheetExtractor.isSpreadsheet(meta.name)) {
+                    if (meta.size > 1 && meta.size > PDF_EXTRACT_LIMIT_BYTES) {
+                        emit("Spreadsheet is too large to read (${humanSize(meta.size)}); limit is ${humanSize(PDF_EXTRACT_LIMIT_BYTES)}.")
+                        return@launch
+                    }
+                    openSpreadsheet(uri, meta.name)
+                    return@launch
+                }
                 if (meta.name.endsWith(".zip", true)) {
                     val entries = withContext(Dispatchers.IO) { ZipSupport.listTextEntries(resolver, uri) }
                     zipPrompt = ZipPrompt(uri, entries)
@@ -337,6 +346,40 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 emit("Text extracted from PDF (formatting not preserved).")
             } catch (e: Exception) {
                 emit("Could not read PDF: ${e.message}")
+            } finally {
+                isBusy = false
+            }
+        }
+    }
+
+    /** Open a spreadsheet by extracting its cells as a tab-separated table. */
+    private fun openSpreadsheet(uri: Uri, name: String) {
+        viewModelScope.launch {
+            isBusy = true
+            try {
+                val text = withContext(Dispatchers.IO) { SpreadsheetExtractor.extract(resolver, uri, name) }
+                if (text.isBlank()) {
+                    emit("No readable content found in \"$name\".")
+                    return@launch
+                }
+                val (normalized, ending) = normalizeIn(text)
+                val baseName = name.substringBeforeLast('.') + ".txt"
+                val id = UUID.randomUUID().toString()
+                val doc = DocumentState(
+                    id = id, uri = null, displayName = baseName, encoding = TextEncoding.UTF_8,
+                    lineEnding = ending, language = SyntaxLanguage.PLAIN,
+                    loadMode = LoadMode.EDITABLE, isModified = true,
+                    stats = TextStats.of(normalized, normalized.toByteArray().size.toLong()),
+                )
+                val tab = EditorTab(doc, TextFieldValue(normalized)).also { it.savedSignature = -1 }
+                tabs.add(tab); activeIndex = tabs.lastIndex
+                if (name.lowercase().endsWith(".xls")) {
+                    emit("Text extracted from legacy .xls (approximate — convert to .xlsx for exact columns).")
+                } else {
+                    emit("Table extracted from spreadsheet (formatting not preserved).")
+                }
+            } catch (e: Exception) {
+                emit("Could not read spreadsheet: ${e.message}")
             } finally {
                 isBusy = false
             }
