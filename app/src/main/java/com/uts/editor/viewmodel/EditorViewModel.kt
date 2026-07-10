@@ -386,11 +386,12 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 val text = withContext(Dispatchers.IO) {
                     runCatching { PdfExtractor.extract(resolver, uri) }.getOrDefault("")
                 }
-                if (text.isBlank()) {
-                    // Image-only (scanned) PDF: show it as page images (read-only);
-                    // the viewer's Edit button runs OCR to get editable text.
+                // Scanned PDFs (e.g. CamScanner) carry only a watermark text layer.
+                // If little real text remains after stripping such watermarks, treat
+                // the file as image-only and show the page-image viewer instead.
+                if (meaningfulPdfText(text).length < MIN_MEANINGFUL_PDF_CHARS) {
                     pdfViewer = PdfViewRequest(uri, name)
-                    emit("This PDF has no selectable text — showing pages as images. Tap Edit for OCR.")
+                    emit("This PDF looks scanned — showing pages as images. Tap Edit for OCR.")
                     return@launch
                 }
                 val (normalized, ending) = normalizeIn(text)
@@ -1212,6 +1213,15 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         return header.contains("%PDF-")
     }
 
+    /** Extracted PDF text with common scanner watermarks removed, whitespace-collapsed. */
+    private fun meaningfulPdfText(text: String): String {
+        var t = text
+        for (w in SCANNER_WATERMARKS) {
+            t = t.replace(w, " ", ignoreCase = true)
+        }
+        return t.replace(Regex("\\s+"), " ").trim()
+    }
+
     private fun emit(text: String) { _messages.tryEmit(UiMessage(text)) }
 
     companion object {
@@ -1219,6 +1229,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         private const val AUTOSAVE_INTERVAL_MS = 30_000L
         private const val LARGE_PAGE_LINES = 5_000
         private const val PDF_EXTRACT_LIMIT_BYTES = 50L * 1024 * 1024 // 50 MB
+        // Below this much real text (after removing scanner watermarks) a PDF is
+        // treated as scanned/image-only and shown in the page-image viewer.
+        private const val MIN_MEANINGFUL_PDF_CHARS = 24
+        private val SCANNER_WATERMARKS = listOf(
+            "Scanned by CamScanner", "Scanned with CamScanner", "www.camscanner.com",
+            "CamScanner", "Scanned by TapScanner", "Scanned with Fast Scanner",
+            "Scanned with Adobe Scan", "Scanned with Microsoft Lens", "Created by Scanner",
+        )
 
         fun humanSize(bytes: Long): String {
             if (bytes < 1024) return "$bytes B"
