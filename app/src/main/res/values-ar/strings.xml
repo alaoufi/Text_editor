@@ -118,6 +118,8 @@
     <string name="settings_clear_folder">مسح</string>
     <string name="save_into_folder">سيُحفظ في: %1$s</string>
     <string name="file_name_hint">اسم الملف</string>
+    <string name="file_format">الصيغة:</string>
+    <string name="file_format_none">بلا</string>
 
     <!-- Recovery -->
     <string name="recovery_title">استعادة العمل غير المحفوظ؟</string>

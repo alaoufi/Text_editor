@@ -158,10 +158,9 @@ fun AppRoot(
         }
     }
 
-    val startNewSave: () -> Unit = {
-        if (settings.saveFolderUri != null) showSaveName = true
-        else saveAsLauncher.launch(viewModel.active?.doc?.displayName ?: "untitled.txt")
-    }
+    // Always go through the in-app name+format dialog first; it then either
+    // saves into the default folder or hands off to the system picker.
+    val startNewSave: () -> Unit = { showSaveName = true }
     val onCloseActive: () -> Unit = {
         val idx = viewModel.activeIndex
         if (!viewModel.requestCloseTab(idx)) pendingClose = idx
@@ -230,7 +229,7 @@ fun AppRoot(
                     onNew = { menuOpen = false; viewModel.newDocument() },
                     onOpen = { menuOpen = false; openLauncher.launch(arrayOf("*/*")) },
                     onSave = { menuOpen = false; viewModel.save(onNeedSaveAs = startNewSave) },
-                    onSaveAs = { menuOpen = false; saveAsLauncher.launch(active?.doc?.displayName ?: "untitled.txt") },
+                    onSaveAs = { menuOpen = false; showSaveName = true },
                     onCloseDoc = { menuOpen = false; onCloseActive() },
                     onGoto = { menuOpen = false; showGoto = true },
                     onSyntaxLanguage = { menuOpen = false; showLanguage = true },

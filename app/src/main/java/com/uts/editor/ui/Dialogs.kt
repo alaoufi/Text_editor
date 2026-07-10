@@ -3,6 +3,7 @@ package com.uts.editor.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +22,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -117,6 +120,8 @@ fun FileNameDialog(
     onDismiss: () -> Unit,
 ) {
     var name by remember { mutableStateOf(initial) }
+    var formatMenu by remember { mutableStateOf(false) }
+    val currentExt = name.substringAfterLast('.', "").lowercase()
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
@@ -142,9 +147,44 @@ fun FileNameDialog(
                     singleLine = true,
                     label = { Text(stringResource(R.string.file_name_hint)) },
                 )
+                // Quick file-format picker: appends/replaces the name's extension.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 8.dp),
+                ) {
+                    Text(stringResource(R.string.file_format), style = MaterialTheme.typography.bodyMedium)
+                    Box {
+                        TextButton(onClick = { formatMenu = true }) {
+                            Text(if (currentExt.isEmpty()) stringResource(R.string.file_format_none) else ".$currentExt")
+                        }
+                        DropdownMenu(
+                            expanded = formatMenu,
+                            onDismissRequest = { formatMenu = false },
+                            modifier = Modifier.heightIn(max = 280.dp),
+                        ) {
+                            FILE_FORMATS.forEach { ext ->
+                                DropdownMenuItem(
+                                    text = { Text(".$ext") },
+                                    onClick = { formatMenu = false; name = replaceExtension(name, ext) },
+                                )
+                            }
+                        }
+                    }
+                }
             }
         },
     )
+}
+
+private val FILE_FORMATS = listOf(
+    "txt", "md", "json", "xml", "html", "css", "js", "ts", "csv",
+    "log", "yaml", "yml", "ini", "conf", "sql", "py", "sh", "kt", "java", "php",
+)
+
+/** Replace (or add) the extension of [name] with [ext], keeping the base name. */
+private fun replaceExtension(name: String, ext: String): String {
+    val base = if (name.contains('.')) name.substringBeforeLast('.') else name
+    return "${base.ifBlank { "untitled" }}.$ext"
 }
 
 @Composable

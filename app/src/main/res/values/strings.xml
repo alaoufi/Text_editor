@@ -118,6 +118,8 @@
     <string name="settings_clear_folder">Clear</string>
     <string name="save_into_folder">Will be saved into: %1$s</string>
     <string name="file_name_hint">File name</string>
+    <string name="file_format">Format:</string>
+    <string name="file_format_none">none</string>
 
     <!-- Recovery -->
     <string name="recovery_title">Recover unsaved work?</string>
