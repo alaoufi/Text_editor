@@ -12,11 +12,14 @@ android {
         applicationId = "com.uts.editor"
         minSdk = 26
         targetSdk = 34
-        versionCode = 13
-        versionName = "2.2"
+        versionCode = 14
+        versionName = "2.3"
         vectorDrawables { useSupportLibrary = true }
         // Keep app lightweight: only ship the resources we use.
         resourceConfigurations += listOf("en", "ar")
+        // Ship native OCR libs only for real-phone ABIs (drops x86/x86_64),
+        // roughly halving the APK size added by Tesseract.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
     signingConfigs {
