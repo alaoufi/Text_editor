@@ -29,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -102,17 +103,22 @@ fun PdfImageViewer(
                     }
                 }
 
-                // null = still loading; success/failure once the open attempt finishes.
+                // Hold the opened document in a stable holder and close it only when
+                // the viewer truly leaves — keying the effect on the changing result
+                // used to close the freshly-loaded renderer immediately ("closed").
+                val holder = remember(request.uri) { object { var pages: PdfPages? = null } }
                 val result by produceState<Result<PdfPages>?>(initialValue = null, request.uri) {
-                    value = withContext(Dispatchers.IO) {
+                    val r = withContext(Dispatchers.IO) {
                         runCatching {
                             withTimeout(30_000) {
                                 PdfRenderHelper.open(context, request.uri) ?: error("open failed")
                             }
                         }
                     }
+                    holder.pages = r.getOrNull()
+                    value = r
                 }
-                DisposableEffect(result) { onDispose { result?.getOrNull()?.close() } }
+                DisposableEffect(request.uri) { onDispose { holder.pages?.close() } }
 
                 val current = result?.getOrNull()
                 when {
