@@ -215,6 +215,15 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 val sample = withContext(Dispatchers.IO) { FileIo.readSample(resolver, uri) }
 
+                // Content-based PDF detection: catches PDFs whose display name has
+                // no ".pdf" extension (some content providers drop it) or a wrong
+                // MIME type, so they still open via text extraction instead of the
+                // "not a text file" prompt.
+                if (looksPdf(sample)) {
+                    openPdf(uri, meta.name)
+                    return@launch
+                }
+
                 // Honour a remembered encoding for this exact file.
                 val rememberedId = withContext(Dispatchers.IO) { settingsStore.lastEncodingFor(uri.toString()) }
                 val remembered = TextEncoding.byId(rememberedId)
@@ -1141,6 +1150,12 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             val s = String(sample, encoding.charset())
             if (s.length > maxChars) s.substring(0, maxChars) + "…" else s
         }.getOrElse { "" }
+    }
+
+    /** True if the sample's header carries the PDF magic "%PDF-". */
+    private fun looksPdf(sample: ByteArray): Boolean {
+        val header = String(sample, 0, minOf(sample.size, 1024), Charsets.ISO_8859_1)
+        return header.contains("%PDF-")
     }
 
     private fun emit(text: String) { _messages.tryEmit(UiMessage(text)) }
