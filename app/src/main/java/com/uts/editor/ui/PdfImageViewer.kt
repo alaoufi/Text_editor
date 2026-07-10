@@ -45,6 +45,7 @@ import com.uts.editor.util.PdfRenderHelper
 import com.uts.editor.viewmodel.PdfViewRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 /**
  * Full-screen, read-only viewer that renders a scanned PDF's pages as images.
@@ -104,7 +105,11 @@ fun PdfImageViewer(
                 // null = still loading; success/failure once the open attempt finishes.
                 val result by produceState<Result<PdfPages>?>(initialValue = null, request.uri) {
                     value = withContext(Dispatchers.IO) {
-                        runCatching { PdfRenderHelper.open(context, request.uri) ?: error("open failed") }
+                        runCatching {
+                            withTimeout(30_000) {
+                                PdfRenderHelper.open(context, request.uri) ?: error("open failed")
+                            }
+                        }
                     }
                 }
                 DisposableEffect(result) { onDispose { result?.getOrNull()?.close() } }
@@ -136,18 +141,23 @@ fun PdfImageViewer(
 
 @Composable
 private fun PdfPageView(pages: PdfPages, index: Int, widthPx: Int) {
-    val bitmap by produceState<Bitmap?>(initialValue = null, index, widthPx) {
-        value = withContext(Dispatchers.IO) { runCatching { pages.render(index, widthPx) }.getOrNull() }
+    // first = render finished; second = the bitmap (null if it failed).
+    val state by produceState(initialValue = false to (null as Bitmap?), index, widthPx) {
+        val bmp = withContext(Dispatchers.IO) { runCatching { pages.render(index, widthPx) }.getOrNull() }
+        value = true to bmp
     }
-    val bmp = bitmap
-    if (bmp != null) {
-        Image(
+    val (done, bmp) = state
+    when {
+        bmp != null -> Image(
             bitmap = bmp.asImageBitmap(),
             contentDescription = null,
             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp, horizontal = 4.dp),
         )
-    } else {
-        Box(
+        done -> Box(
+            Modifier.fillMaxWidth().height(120.dp),
+            contentAlignment = Alignment.Center,
+        ) { Text(stringResource(R.string.pdf_page_failed, index + 1)) }
+        else -> Box(
             Modifier.fillMaxWidth().height(360.dp),
             contentAlignment = Alignment.Center,
         ) { CircularProgressIndicator() }
