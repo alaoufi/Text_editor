@@ -33,6 +33,9 @@ object OcrHelper {
         val tess = TessBaseAPI()
         try {
             if (!tess.init(dataPath.absolutePath, langs)) return ""
+            // Full automatic page-segmentation improves reading order on multi-
+            // column / structured pages compared with the single-block default.
+            runCatching { tess.pageSegMode = TessBaseAPI.PageSegMode.PSM_AUTO }
             val bmp = pages.render(pageIndex, OCR_WIDTH) ?: return ""
             tess.setImage(bmp)
             val text = tess.getUTF8Text() ?: ""
