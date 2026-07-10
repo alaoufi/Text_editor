@@ -132,7 +132,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 tabs.add(tab); activeIndex = tabs.lastIndex
                 pdfViewer = null
                 emit("Text recognised via OCR — please review for accuracy.")
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 emit("OCR failed: ${e.message}")
             } finally {
                 ocrRunning = false
@@ -368,7 +368,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 if (name.lowercase().endsWith(".doc")) {
                     emit("Text extracted from .doc (approximate — formatting not preserved).")
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 emit("Could not read Word file: ${e.message}")
             } finally {
                 isBusy = false
@@ -381,7 +381,11 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             isBusy = true
             try {
-                val text = withContext(Dispatchers.IO) { PdfExtractor.extract(resolver, uri) }
+                // Any extraction failure (including OutOfMemoryError on image-heavy
+                // PDFs) falls back to the read-only image viewer instead of crashing.
+                val text = withContext(Dispatchers.IO) {
+                    runCatching { PdfExtractor.extract(resolver, uri) }.getOrDefault("")
+                }
                 if (text.isBlank()) {
                     // Image-only (scanned) PDF: show it as page images (read-only);
                     // the viewer's Edit button runs OCR to get editable text.
@@ -403,7 +407,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 val tab = EditorTab(doc, TextFieldValue(normalized)).also { it.savedSignature = -1 }
                 tabs.add(tab); activeIndex = tabs.lastIndex
                 emit("Text extracted from PDF (formatting not preserved).")
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 emit("Could not read PDF: ${e.message}")
             } finally {
                 isBusy = false
@@ -437,7 +441,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 } else {
                     emit("Table extracted from spreadsheet (formatting not preserved).")
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 emit("Could not read spreadsheet: ${e.message}")
             } finally {
                 isBusy = false

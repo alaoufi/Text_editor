@@ -39,9 +39,15 @@ class PdfPages(
     fun render(index: Int, widthPx: Int): Bitmap {
         val page = renderer.openPage(index)
         try {
-            val w = widthPx.coerceAtLeast(1)
-            val scale = w.toFloat() / page.width
-            val h = (page.height * scale).toInt().coerceIn(1, 8000)
+            var w = widthPx.coerceIn(1, MAX_DIM)
+            var h = (page.height * (w.toFloat() / page.width)).toInt().coerceAtLeast(1)
+            // Keep both dimensions within the GPU texture limit so drawing the
+            // bitmap never crashes with "bitmap too large to be uploaded".
+            if (h > MAX_DIM) {
+                val s = MAX_DIM.toFloat() / h
+                w = (w * s).toInt().coerceAtLeast(1)
+                h = MAX_DIM
+            }
             val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             bmp.eraseColor(Color.WHITE)
             page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
@@ -49,6 +55,11 @@ class PdfPages(
         } finally {
             page.close()
         }
+    }
+
+    private companion object {
+        /** Conservative max texture dimension supported by essentially all GPUs. */
+        const val MAX_DIM = 2048
     }
 
     fun close() {

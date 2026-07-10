@@ -101,19 +101,27 @@ fun PdfImageViewer(
                     }
                 }
 
-                val pages by produceState<PdfPages?>(initialValue = null, request.uri) {
-                    value = withContext(Dispatchers.IO) { PdfRenderHelper.open(context, request.uri) }
+                // null = still loading; success/failure once the open attempt finishes.
+                val result by produceState<Result<PdfPages>?>(initialValue = null, request.uri) {
+                    value = withContext(Dispatchers.IO) {
+                        runCatching { PdfRenderHelper.open(context, request.uri) ?: error("open failed") }
+                    }
                 }
-                DisposableEffect(pages) { onDispose { pages?.close() } }
+                DisposableEffect(result) { onDispose { result?.getOrNull()?.close() } }
 
-                val current = pages
-                if (current == null) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                val current = result?.getOrNull()
+                when {
+                    result == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
-                } else {
-                    BoxWithConstraints(Modifier.fillMaxSize()) {
-                        val widthPx = with(density) { maxWidth.toPx() }.toInt().coerceIn(1, 1600)
+                    current == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            stringResource(R.string.pdf_cannot_display),
+                            modifier = Modifier.padding(24.dp),
+                        )
+                    }
+                    else -> BoxWithConstraints(Modifier.fillMaxSize()) {
+                        val widthPx = with(density) { maxWidth.toPx() }.toInt().coerceIn(1, 2048)
                         LazyColumn(Modifier.fillMaxSize()) {
                             items(current.pageCount) { index ->
                                 PdfPageView(current, index, widthPx)
