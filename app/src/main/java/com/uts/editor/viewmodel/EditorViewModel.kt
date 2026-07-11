@@ -136,7 +136,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             isBusy = true
             try {
                 when (req.kind) {
-                    DocKind.WORD -> extractWordToTab(req.uri, req.name, startEditing = true)
+                    DocKind.WORD -> extractWordFormattedToTab(req.uri, req.name)
                     DocKind.SPREADSHEET -> extractSpreadsheetToTab(req.uri, req.name, startEditing = true)
                 }
             } catch (e: Throwable) {
@@ -422,6 +422,39 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 isBusy = false
             }
         }
+    }
+
+    /**
+     * Open a .docx for editing while KEEPING its structure and formatting:
+     * paragraphs/tables in order, bold/italic/underline, heading sizes and
+     * paragraph alignment are carried into the editor (as display formatting).
+     * Falls back to plain text extraction if the structured parse yields nothing.
+     */
+    private suspend fun extractWordFormattedToTab(uri: Uri, name: String) {
+        val editable = if (name.lowercase().endsWith(".docx")) {
+            withContext(Dispatchers.IO) { runCatching { DocxHtmlConverter.toEditable(resolver, uri) }.getOrNull() }
+        } else null
+        if (editable == null || editable.text.isBlank()) {
+            extractWordToTab(uri, name, startEditing = true)
+            return
+        }
+        val (normalized, ending) = normalizeIn(editable.text)
+        val baseName = name.substringBeforeLast('.') + ".txt"
+        val id = UUID.randomUUID().toString()
+        val doc = DocumentState(
+            id = id, uri = null, displayName = baseName, encoding = TextEncoding.UTF_8,
+            lineEnding = ending, language = SyntaxLanguage.PLAIN,
+            loadMode = LoadMode.EDITABLE, isModified = true,
+            stats = TextStats.of(normalized, normalized.toByteArray().size.toLong()),
+        )
+        val tab = EditorTab(doc, TextFieldValue(normalized)).also {
+            it.savedSignature = -1
+            it.reading = false
+            it.spans.addAll(editable.spans)
+            editable.aligns.forEach { (line, code) -> it.lineAligns[line] = code }
+        }
+        tabs.add(tab); activeIndex = tabs.lastIndex
+        emit("Opened for editing — formatting kept where the editor supports it (saved as .txt or HTML).")
     }
 
     /** Extract a Word document's text into a new editable .txt buffer. */
