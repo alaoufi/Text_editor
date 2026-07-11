@@ -1,6 +1,12 @@
 package com.uts.editor.util
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
 import android.net.Uri
 import com.googlecode.tesseract.android.TessBaseAPI
 import java.io.File
@@ -18,8 +24,37 @@ object OcrHelper {
     private const val TESSDATA_BASE =
         "https://github.com/tesseract-ocr/tessdata_fast/raw/main/"
 
-    /** Width (px) each page is rendered at before OCR — higher = more accurate, slower. */
-    private const val OCR_WIDTH = 1400
+    /** Width (px) each page is rendered at before OCR — higher = more accurate, slower.
+     *  Dense/coloured tables (e.g. an Excel sheet exported to PDF) need the detail. */
+    private const val OCR_WIDTH = 2600
+
+    /**
+     * Flatten a page to high-contrast grayscale over a white background before
+     * OCR. Coloured cell fills (common in spreadsheets) otherwise confuse the
+     * recogniser's binarisation and it reads almost nothing; removing colour and
+     * boosting contrast makes the dark text stand out.
+     */
+    private fun preprocess(src: Bitmap): Bitmap {
+        val out = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        canvas.drawColor(Color.WHITE)
+        val matrix = ColorMatrix().apply { setSaturation(0f) } // grayscale
+        val contrast = 1.7f
+        val translate = (-0.5f * contrast + 0.5f) * 255f
+        matrix.postConcat(
+            ColorMatrix(
+                floatArrayOf(
+                    contrast, 0f, 0f, 0f, translate,
+                    0f, contrast, 0f, 0f, translate,
+                    0f, 0f, contrast, 0f, translate,
+                    0f, 0f, 0f, 1f, 0f,
+                )
+            )
+        )
+        val paint = Paint().apply { colorFilter = ColorMatrixColorFilter(matrix) }
+        canvas.drawBitmap(src, 0f, 0f, paint)
+        return out
+    }
 
     /** OCR a single page (fast). Returns the recognised text. */
     fun recognizePage(
@@ -36,7 +71,9 @@ object OcrHelper {
             // Full automatic page-segmentation improves reading order on multi-
             // column / structured pages compared with the single-block default.
             runCatching { tess.pageSegMode = TessBaseAPI.PageSegMode.PSM_AUTO }
-            val bmp = pages.render(pageIndex, OCR_WIDTH) ?: return ""
+            val raw = pages.renderForOcr(pageIndex, OCR_WIDTH) ?: return ""
+            val bmp = preprocess(raw)
+            raw.recycle()
             tess.setImage(bmp)
             val text = tess.getUTF8Text() ?: ""
             bmp.recycle()
@@ -77,8 +114,10 @@ object OcrHelper {
             if (!tess.init(dataPath.absolutePath, langs)) return ""
             val total = pages.pageCount
             for (i in 0 until total) {
-                val bmp = runCatching { pages.render(i, OCR_WIDTH) }.getOrNull()
-                if (bmp != null) {
+                val raw = runCatching { pages.renderForOcr(i, OCR_WIDTH) }.getOrNull()
+                if (raw != null) {
+                    val bmp = preprocess(raw)
+                    raw.recycle()
                     tess.setImage(bmp)
                     sb.append(tess.getUTF8Text() ?: "").append("\n\n")
                     bmp.recycle()

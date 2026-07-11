@@ -78,6 +78,45 @@ class PdfPages(
         }
     }
 
+    /**
+     * Render a page for OCR at a higher resolution than the on-screen limit.
+     * The bitmap is never uploaded as a GPU texture, so it can exceed the 2048
+     * display cap — small text in dense tables needs the extra pixels to be
+     * recognised at all.
+     */
+    @Synchronized
+    fun renderForOcr(index: Int, widthPx: Int): Bitmap? {
+        if (closed) { lastError = "closed"; return null }
+        if (index < 0 || index >= pageCount) { lastError = "bad index"; return null }
+        val page = try {
+            renderer.openPage(index)
+        } catch (e: Throwable) {
+            lastError = "openPage: ${e.javaClass.simpleName}: ${e.message}"
+            return null
+        }
+        try {
+            val pw = if (page.width > 0) page.width else 1
+            val ph = if (page.height > 0) page.height else 1
+            var w = widthPx.coerceIn(1, MAX_DIM_OCR)
+            var h = (ph * (w.toFloat() / pw)).toInt().coerceIn(1, MAX_DIM_OCR)
+            if (w.toLong() * h > OCR_PX_CAP) {
+                val s = kotlin.math.sqrt(OCR_PX_CAP.toFloat() / (w.toFloat() * h))
+                w = (w * s).toInt().coerceAtLeast(1)
+                h = (h * s).toInt().coerceAtLeast(1)
+            }
+            val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            bmp.eraseColor(Color.WHITE)
+            page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            lastError = null
+            return bmp
+        } catch (e: Throwable) {
+            lastError = "render: ${e.javaClass.simpleName}: ${e.message}"
+            return null
+        } finally {
+            runCatching { page.close() }
+        }
+    }
+
     @Synchronized
     fun close() {
         if (closed) return
@@ -90,5 +129,9 @@ class PdfPages(
     private companion object {
         /** Conservative max texture dimension supported by essentially all GPUs. */
         const val MAX_DIM = 2048
+
+        /** OCR bitmaps aren't shown, so they may exceed the GPU texture limit. */
+        const val MAX_DIM_OCR = 3000
+        const val OCR_PX_CAP = 12_000_000L
     }
 }
