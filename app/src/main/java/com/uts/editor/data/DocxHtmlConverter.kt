@@ -45,6 +45,10 @@ object DocxHtmlConverter {
         val spans = ArrayList<RichSpan>()
         val aligns = HashMap<Int, Int>()
         var lineCount = 0
+        // Whether the document as a whole reads right-to-left (Arabic). Used to
+        // give Latin/number-only paragraphs the correct alignment in the RTL
+        // editor instead of leaving them stuck on the right.
+        val docRtl = TextDirection.isRtl(plainText(body))
 
         fun appendNewline() { sb.append('\n'); lineCount++ }
 
@@ -70,12 +74,20 @@ object DocxHtmlConverter {
         }
 
         fun appendParagraph(p: String) {
-            val alignCode = when (Regex("<w:jc\\b[^>]*w:val=\"([^\"]*)\"").find(p)?.groupValues?.get(1)) {
+            val jc = Regex("<w:jc\\b[^>]*w:val=\"([^\"]*)\"").find(p)?.groupValues?.get(1)
+            val alignCode = when (jc) {
                 "center" -> 1
                 "both", "distribute" -> 3
                 "left" -> 2          // visually opposite of the RTL start side
                 "right", "end" -> 0
-                else -> 0
+                else -> {
+                    // No explicit Word alignment. In an RTL document, a paragraph
+                    // that is itself Latin/number text (a title, a number, a code)
+                    // should sit on the left (End) rather than the RTL start side.
+                    val ptext = Regex("<w:t\\b[^>]*>([\\s\\S]*?)</w:t>").findAll(p)
+                        .joinToString("") { unescapeXml(it.groupValues[1]) }
+                    if (docRtl && ptext.isNotBlank() && !TextDirection.isRtl(ptext)) 2 else 0
+                }
             }
             val heading = Regex("<w:pStyle\\b[^>]*w:val=\"Heading(\\d)\"")
                 .find(p)?.groupValues?.get(1)?.toIntOrNull()
@@ -134,8 +146,14 @@ object DocxHtmlConverter {
             last = m.range.last + 1
         }
         sb.append(convertParagraphs(body.substring(last)))
-        return wrap(sb.toString())
+        val bodyHtml = sb.toString()
+        return wrap(bodyHtml, TextDirection.dominant(plainText(body)))
     }
+
+    /** All visible run text of the document, for base-direction detection. */
+    private fun plainText(body: String): String =
+        Regex("<w:t\\b[^>]*>([\\s\\S]*?)</w:t>").findAll(body)
+            .joinToString(" ") { unescapeXml(it.groupValues[1]) }
 
     private fun convertParagraphs(segment: String): String {
         val out = StringBuilder()
@@ -156,9 +174,12 @@ object DocxHtmlConverter {
             else -> null
         }
         val style = if (align != null) " style=\"text-align:$align\"" else ""
-        if (inner.isBlank()) return "<p>&nbsp;</p>"
-        return if (heading != null && heading in 1..6) "<h$heading$style>$inner</h$heading>"
-        else "<p$style>$inner</p>"
+        // Each block carries dir="auto" so it resolves its OWN direction — an
+        // Arabic paragraph stays right-to-left even inside a document whose first
+        // characters are Latin/digits (which would otherwise flip everything).
+        if (inner.isBlank()) return "<p dir=\"auto\">&nbsp;</p>"
+        return if (heading != null && heading in 1..6) "<h$heading dir=\"auto\"$style>$inner</h$heading>"
+        else "<p dir=\"auto\"$style>$inner</p>"
     }
 
     private fun runsToHtml(scope: String): String {
@@ -184,7 +205,7 @@ object DocxHtmlConverter {
         for (tr in Regex("<w:tr\\b[\\s\\S]*?</w:tr>").findAll(tbl)) {
             out.append("<tr>")
             for (tc in Regex("<w:tc\\b[\\s\\S]*?</w:tc>").findAll(tr.value)) {
-                out.append("<td>").append(convertParagraphs(tc.value).ifBlank { "&nbsp;" }).append("</td>")
+                out.append("<td dir=\"auto\">").append(convertParagraphs(tc.value).ifBlank { "&nbsp;" }).append("</td>")
             }
             out.append("</tr>")
         }
@@ -192,8 +213,8 @@ object DocxHtmlConverter {
         return out.toString()
     }
 
-    private fun wrap(bodyHtml: String): String = """
-        <!doctype html><html dir="auto"><head><meta charset="utf-8">
+    private fun wrap(bodyHtml: String, baseDir: String): String = """
+        <!doctype html><html dir="$baseDir"><head><meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
           body{font-family:sans-serif;line-height:1.7;padding:12px;color:#111;background:#fff;word-wrap:break-word}

@@ -58,12 +58,18 @@ object DocxWriter {
     }
 
     private fun buildParagraph(line: String, lineOffset: Int, spans: List<RichSpan>, alignCode: Int?): String {
+        // Mark Arabic paragraphs right-to-left so Microsoft Word (and any reader)
+        // shows them correctly instead of defaulting to left-to-right.
+        val rtl = TextDirection.isRtl(line)
         val jc = when (alignCode) {
             1 -> "center"; 2 -> "end"; 3 -> "both"; else -> null
         }
-        val pPr = if (jc != null) "<w:pPr><w:jc w:val=\"$jc\"/></w:pPr>" else ""
+        val pPrInner = StringBuilder()
+        if (rtl) pPrInner.append("<w:bidi/>")
+        if (jc != null) pPrInner.append("<w:jc w:val=\"$jc\"/>")
+        val pPr = if (pPrInner.isNotEmpty()) "<w:pPr>$pPrInner</w:pPr>" else ""
         if (line.isEmpty()) return "<w:p>$pPr</w:p>"
-        return "<w:p>$pPr${buildRuns(line, lineOffset, spans)}</w:p>"
+        return "<w:p>$pPr${buildRuns(line, lineOffset, spans, rtl)}</w:p>"
     }
 
     private data class Attr(
@@ -88,20 +94,20 @@ object DocxWriter {
     }
 
     /** Split a line into runs of uniform formatting. */
-    private fun buildRuns(line: String, lineOffset: Int, spans: List<RichSpan>): String {
+    private fun buildRuns(line: String, lineOffset: Int, spans: List<RichSpan>, rtl: Boolean): String {
         val sb = StringBuilder()
         var i = 0
         while (i < line.length) {
             val a = attrAt(lineOffset + i, spans)
             var j = i + 1
             while (j < line.length && attrAt(lineOffset + j, spans) == a) j++
-            sb.append(runXml(line.substring(i, j), a))
+            sb.append(runXml(line.substring(i, j), a, rtl))
             i = j
         }
         return sb.toString()
     }
 
-    private fun runXml(segment: String, a: Attr): String {
+    private fun runXml(segment: String, a: Attr, rtl: Boolean): String {
         val rpr = StringBuilder()
         if (a.bold) rpr.append("<w:b/>")
         if (a.italic) rpr.append("<w:i/>")
@@ -111,6 +117,7 @@ object DocxWriter {
             val half = (a.size * 2).toInt() // WordprocessingML sizes are half-points
             rpr.append("<w:sz w:val=\"$half\"/><w:szCs w:val=\"$half\"/>")
         }
+        if (rtl) rpr.append("<w:rtl/>")
         val rprXml = if (rpr.isNotEmpty()) "<w:rPr>$rpr</w:rPr>" else ""
         val content = StringBuilder()
         segment.split('\t').forEachIndexed { idx, piece ->

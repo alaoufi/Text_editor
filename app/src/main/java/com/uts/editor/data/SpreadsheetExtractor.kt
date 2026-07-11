@@ -43,7 +43,8 @@ object SpreadsheetExtractor {
             }
             sb.append(sheetToHtml(String(entries[sheetFile]!!, Charsets.UTF_8), shared))
         }
-        return wrapHtml(sb.toString())
+        // Right-to-left sheet when the content is predominantly Arabic.
+        return wrapHtml(sb.toString(), TextDirection.dominant(shared.joinToString(" ")))
     }
 
     private fun sheetToHtml(xml: String, shared: List<String>): String {
@@ -61,7 +62,7 @@ object SpreadsheetExtractor {
             out.append("<tr>")
             val maxCol = cells.lastKey().takeIf { cells.isNotEmpty() } ?: -1
             for (col in 0..maxCol) {
-                out.append("<td>").append(escapeHtml(cells[col] ?: "").ifEmpty { "&nbsp;" }).append("</td>")
+                out.append("<td dir=\"auto\">").append(escapeHtml(cells[col] ?: "").ifEmpty { "&nbsp;" }).append("</td>")
             }
             out.append("</tr>")
         }
@@ -72,8 +73,8 @@ object SpreadsheetExtractor {
     private fun escapeHtml(s: String): String =
         s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-    private fun wrapHtml(body: String): String = """
-        <!doctype html><html dir="auto"><head><meta charset="utf-8">
+    private fun wrapHtml(body: String, baseDir: String): String = """
+        <!doctype html><html dir="$baseDir"><head><meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>body{font-family:sans-serif;padding:8px;color:#111;background:#fff}
         table{border-collapse:collapse;margin:6px 0}
