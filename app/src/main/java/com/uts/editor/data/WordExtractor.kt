@@ -113,7 +113,10 @@ object WordExtractor {
             }
             out.toByteArray()
         }
-        // Recover UTF-16LE text runs (Word stores body text as UTF-16LE).
-        return BinaryTextRecovery.recover(bytes)
+        // Prefer a real structural parse (OLE2 + FIB + piece table): it returns
+        // the document's text in order without the style/stream-name noise a raw
+        // byte scan produces. Fall back to best-effort recovery if it can't parse.
+        return DocBinaryExtractor.extract(bytes)?.takeIf { it.isNotBlank() }
+            ?: BinaryTextRecovery.recover(bytes)
     }
 }
