@@ -1,7 +1,10 @@
 package com.uts.editor.data
 
 import android.content.ContentResolver
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Base64
 import com.uts.editor.viewmodel.RichSpan
 import java.io.ByteArrayOutputStream
 import java.util.zip.ZipInputStream
@@ -25,6 +28,9 @@ object DocxHtmlConverter {
         val spans: List<RichSpan>,
         val aligns: Map<Int, Int>,
     )
+
+    /** Max width/height (px) an embedded image is downscaled to for the view. */
+    private const val MAX_IMG_DIM = 1400
 
     /** Heading level -> font size (sp) so headings keep their visual weight. */
     private fun headingSize(level: Int): Float = when (level) {
@@ -145,6 +151,7 @@ object DocxHtmlConverter {
         val xml = String(xmlBytes, Charsets.UTF_8)
         val body = Regex("<w:body>([\\s\\S]*)</w:body>").find(xml)?.groupValues?.get(1) ?: xml
         val images = buildImageMap(entries)
+        val pageBg = Regex("<w:background\\b[^>]*w:color=\"([0-9A-Fa-f]{6})\"").find(xml)?.groupValues?.get(1)
         val sb = StringBuilder()
         // Walk tables and the paragraphs between them in document order. Assumes
         // tables are not nested (the common case).
@@ -156,7 +163,7 @@ object DocxHtmlConverter {
         }
         sb.append(convertParagraphs(body.substring(last), images))
         val bodyHtml = sb.toString()
-        return wrap(bodyHtml, TextDirection.dominant(plainText(body)))
+        return wrap(bodyHtml, TextDirection.dominant(plainText(body)), pageBg)
     }
 
     /** relationship id -> inline "data:image/...;base64,..." for each embedded picture. */
@@ -171,14 +178,27 @@ object DocxHtmlConverter {
             target = target.removePrefix("/word/").removePrefix("../").removePrefix("/")
             val path = if (target.startsWith("word/")) target else "word/$target"
             val bytes = entries[path] ?: entries["word/${target.substringAfterLast("../")}"] ?: continue
-            val mime = when (target.substringAfterLast('.').lowercase()) {
-                "png" -> "image/png"; "gif" -> "image/gif"; "bmp" -> "image/bmp"
-                "svg" -> "image/svg+xml"; "webp" -> "image/webp"; else -> "image/jpeg"
-            }
-            map[id] = "data:$mime;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+            // Downscale/re-encode before embedding: full-size photos as base64
+            // bloat the HTML to megabytes, which can overwhelm the WebView (or
+            // force a fall back to plain text). A capped JPEG keeps it light.
+            downscaleToDataUri(bytes)?.let { map[id] = it }
         }
         return map
     }
+
+    private fun downscaleToDataUri(bytes: ByteArray): String? = runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / sample > MAX_IMG_DIM || bounds.outHeight / sample > MAX_IMG_DIM) sample *= 2
+        val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+            ?: return null
+        val out = ByteArrayOutputStream()
+        bmp.compress(Bitmap.CompressFormat.JPEG, 80, out)
+        bmp.recycle()
+        "data:image/jpeg;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+    }.getOrNull()
 
     /** All visible run text of the document, for base-direction detection. */
     private fun plainText(body: String): String =
@@ -259,17 +279,20 @@ object DocxHtmlConverter {
         return out.toString()
     }
 
-    private fun wrap(bodyHtml: String, baseDir: String): String = """
+    private fun wrap(bodyHtml: String, baseDir: String, bgColor: String?): String {
+        val bg = if (bgColor != null) "#$bgColor" else "#fff"
+        return """
         <!doctype html><html dir="$baseDir"><head><meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-          body{font-family:sans-serif;line-height:1.7;padding:12px;color:#111;background:#fff;word-wrap:break-word}
+          body{font-family:sans-serif;line-height:1.7;padding:12px;color:#111;background:$bg;word-wrap:break-word}
           p{margin:0 0 8px}
           table{border-collapse:collapse;width:100%;margin:8px 0}
           td{border:1px solid #999;padding:6px;vertical-align:top}
           h1,h2,h3,h4,h5,h6{margin:10px 0 6px}
         </style></head><body>$bodyHtml</body></html>
-    """.trimIndent()
+        """.trimIndent()
+    }
 
     private fun escape(s: String): String =
         s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
