@@ -1,7 +1,6 @@
 package com.uts.editor
 
 import android.app.Application
-import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -23,10 +22,6 @@ class UtsApplication : Application() {
             }
             previous?.uncaughtException(thread, throwable)
         }
-
-        // PDFBox-Android needs its resource loader initialised once with a
-        // context before any PDF is parsed (used for font handling).
-        PDFBoxResourceLoader.init(applicationContext)
     }
 
     companion object {

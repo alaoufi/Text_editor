@@ -12,14 +12,27 @@ android {
         applicationId = "com.uts.editor"
         minSdk = 26
         targetSdk = 34
-        versionCode = 28
-        versionName = "2.17"
+        versionCode = 29
+        versionName = "2.18"
         vectorDrawables { useSupportLibrary = true }
         // Keep app lightweight: only ship the resources we use.
         resourceConfigurations += listOf("en", "ar")
         // Ship native OCR libs only for real-phone ABIs (drops x86/x86_64),
         // roughly halving the APK size added by Tesseract.
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+    }
+
+    // Produce one APK per CPU architecture so a device downloads only the native
+    // OCR libraries it can run (drops ~5 MB of the other ABI). A universal APK is
+    // still built as a safety net for uncommon/older devices. This is packaging
+    // only — identical code and OCR accuracy in every variant.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = true
+        }
     }
 
     signingConfigs {
@@ -106,8 +119,8 @@ dependencies {
     // Lightweight charset detection (Mozilla universalchardet, maintained fork).
     implementation("com.github.albfernandez:juniversalchardet:2.5.0")
 
-    // PDF text extraction (Apache PDFBox, Android port) for opening PDFs as text.
-    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    // PDFs are rendered to images with the platform's native PdfRenderer, so no
+    // third-party PDF library is needed (saves ~5.5 MB vs. bundling PDFBox).
 
     // On-device OCR (Tesseract) for extracting editable text from scanned PDFs.
     implementation("com.github.adaptech-cz.Tesseract4Android:tesseract4android:4.8.0")

@@ -121,11 +121,23 @@ jobs:
             echo "name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Stage APK with version name
+      - name: Stage APKs with version name
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/release/*.apk \
-            "out/GlobalTextEditor-${{ steps.tag.outputs.name }}.apk"
+          tag="${{ steps.tag.outputs.name }}"
+          # ABI splits yield app-<abi>-release.apk (+ app-universal-release.apk).
+          # Rename each to GlobalTextEditor-<tag>-<abi>.apk; the universal build
+          # is also copied to the plain GlobalTextEditor-<tag>.apk name so the
+          # release always has a device-agnostic default.
+          for f in app/build/outputs/apk/release/*.apk; do
+            base=$(basename "$f" .apk)
+            abi=$(echo "$base" | sed -E 's/^app-(.*)-release$/\1/')
+            cp "$f" "out/GlobalTextEditor-${tag}-${abi}.apk"
+            if [ "$abi" = "universal" ]; then
+              cp "$f" "out/GlobalTextEditor-${tag}.apk"
+            fi
+          done
+          ls -la out
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
