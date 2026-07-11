@@ -14,6 +14,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.uts.editor.BuildConfig
 import com.uts.editor.UtsApplication
+import com.uts.editor.data.DocxHtmlConverter
 import com.uts.editor.data.EncodingDetector
 import com.uts.editor.data.FileIo
 import com.uts.editor.data.PdfExtractor
@@ -70,6 +71,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var pdfViewer by mutableStateOf<PdfViewRequest?>(null)
         private set
+    var htmlViewer by mutableStateOf<HtmlViewRequest?>(null)
+        private set
     var ocrRunning by mutableStateOf(false)
         private set
     var ocrProgress by mutableStateOf(0 to 0)
@@ -116,6 +119,33 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     // ----------------------------------------------------- PDF image viewer
 
     fun closePdfViewer() { if (!ocrRunning) pdfViewer = null }
+
+    // -------------------------------------------------- formatted doc viewer
+
+    fun closeHtmlViewer() { htmlViewer = null }
+
+    /**
+     * Leave the formatted (read-only) Word/Excel view and open the document's
+     * text in an editable tab. Native .docx/.xlsx layout can't be edited in
+     * place, so editing works on the extracted text.
+     */
+    fun editHtmlDoc() {
+        val req = htmlViewer ?: return
+        htmlViewer = null
+        viewModelScope.launch {
+            isBusy = true
+            try {
+                when (req.kind) {
+                    DocKind.WORD -> extractWordToTab(req.uri, req.name, startEditing = true)
+                    DocKind.SPREADSHEET -> extractSpreadsheetToTab(req.uri, req.name, startEditing = true)
+                }
+            } catch (e: Throwable) {
+                emit("Could not open for editing: ${e.message}")
+            } finally {
+                isBusy = false
+            }
+        }
+    }
 
     /** OCR the page currently being viewed and open the recognised text for editing. */
     fun ocrActivePdf(pageIndex: Int) {
@@ -366,37 +396,60 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissZipPrompt() { zipPrompt = null }
 
-    /** Open a Word document by extracting its text (view & copy; not Word editing). */
+    /**
+     * Open a Word document. A modern .docx is shown WITH its formatting in the
+     * read-only HTML viewer (paragraphs, headings, bold/italic, tables); its
+     * Edit button then extracts the text into an editable buffer. A legacy .doc
+     * has no light HTML converter, so it falls back to text extraction.
+     */
     private fun openWord(uri: Uri, name: String) {
         viewModelScope.launch {
             isBusy = true
             try {
-                val text = withContext(Dispatchers.IO) { WordExtractor.extract(resolver, uri, name) }
-                if (text.isBlank()) {
-                    emit("No readable text found in \"$name\".")
-                    return@launch
+                if (name.lowercase().endsWith(".docx")) {
+                    val html = withContext(Dispatchers.IO) {
+                        runCatching { DocxHtmlConverter.toHtml(resolver, uri) }.getOrDefault("")
+                    }
+                    if (html.isNotBlank()) {
+                        htmlViewer = HtmlViewRequest(uri, name, html, DocKind.WORD)
+                        return@launch
+                    }
                 }
-                val (normalized, ending) = normalizeIn(text)
-                // Present extracted text as a new editable .txt buffer (no source Uri,
-                // so saving goes through Save As to a real text file).
-                val baseName = name.substringBeforeLast('.') + ".txt"
-                val id = UUID.randomUUID().toString()
-                val doc = DocumentState(
-                    id = id, uri = null, displayName = baseName, encoding = TextEncoding.UTF_8,
-                    lineEnding = ending, language = SyntaxLanguage.PLAIN,
-                    loadMode = LoadMode.EDITABLE, isModified = true,
-                    stats = TextStats.of(normalized, normalized.toByteArray().size.toLong()),
-                )
-                val tab = EditorTab(doc, TextFieldValue(normalized)).also { it.savedSignature = -1 }
-                tabs.add(tab); activeIndex = tabs.lastIndex
-                if (name.lowercase().endsWith(".doc")) {
-                    emit("Text extracted from .doc (approximate — formatting not preserved).")
-                }
+                extractWordToTab(uri, name)
             } catch (e: Throwable) {
                 emit("Could not read Word file: ${e.message}")
             } finally {
                 isBusy = false
             }
+        }
+    }
+
+    /** Extract a Word document's text into a new editable .txt buffer. */
+    private suspend fun extractWordToTab(uri: Uri, name: String, startEditing: Boolean = false) {
+        val text = withContext(Dispatchers.IO) { WordExtractor.extract(resolver, uri, name) }
+        if (text.isBlank()) {
+            emit("No readable text found in \"$name\".")
+            return
+        }
+        val (normalized, ending) = normalizeIn(text)
+        // Present extracted text as a new editable .txt buffer (no source Uri,
+        // so saving goes through Save As to a real text file).
+        val baseName = name.substringBeforeLast('.') + ".txt"
+        val id = UUID.randomUUID().toString()
+        val doc = DocumentState(
+            id = id, uri = null, displayName = baseName, encoding = TextEncoding.UTF_8,
+            lineEnding = ending, language = SyntaxLanguage.PLAIN,
+            loadMode = LoadMode.EDITABLE, isModified = true,
+            stats = TextStats.of(normalized, normalized.toByteArray().size.toLong()),
+        )
+        val tab = EditorTab(doc, TextFieldValue(normalized)).also {
+            it.savedSignature = -1; it.reading = !startEditing
+        }
+        tabs.add(tab); activeIndex = tabs.lastIndex
+        if (name.lowercase().endsWith(".doc")) {
+            emit("Text extracted from .doc (approximate — formatting not preserved).")
+        } else {
+            emit("Text extracted for editing — formatting is not saved back to .docx.")
         }
     }
 
@@ -409,37 +462,58 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         pdfViewer = PdfViewRequest(uri, name)
     }
 
-    /** Open a spreadsheet by extracting its cells as a tab-separated table. */
+    /**
+     * Open a spreadsheet. A modern .xlsx is shown as an HTML grid (its rows and
+     * columns preserved) in the read-only viewer; its Edit button extracts the
+     * cells as a tab-separated table for editing. A legacy .xls falls back to
+     * best-effort text extraction.
+     */
     private fun openSpreadsheet(uri: Uri, name: String) {
         viewModelScope.launch {
             isBusy = true
             try {
-                val text = withContext(Dispatchers.IO) { SpreadsheetExtractor.extract(resolver, uri, name) }
-                if (text.isBlank()) {
-                    emit("No readable content found in \"$name\".")
-                    return@launch
+                if (name.lowercase().endsWith(".xlsx")) {
+                    val html = withContext(Dispatchers.IO) {
+                        runCatching { SpreadsheetExtractor.toHtml(resolver, uri, name) }.getOrDefault("")
+                    }
+                    if (html.isNotBlank()) {
+                        htmlViewer = HtmlViewRequest(uri, name, html, DocKind.SPREADSHEET)
+                        return@launch
+                    }
                 }
-                val (normalized, ending) = normalizeIn(text)
-                val baseName = name.substringBeforeLast('.') + ".txt"
-                val id = UUID.randomUUID().toString()
-                val doc = DocumentState(
-                    id = id, uri = null, displayName = baseName, encoding = TextEncoding.UTF_8,
-                    lineEnding = ending, language = SyntaxLanguage.PLAIN,
-                    loadMode = LoadMode.EDITABLE, isModified = true,
-                    stats = TextStats.of(normalized, normalized.toByteArray().size.toLong()),
-                )
-                val tab = EditorTab(doc, TextFieldValue(normalized)).also { it.savedSignature = -1 }
-                tabs.add(tab); activeIndex = tabs.lastIndex
-                if (name.lowercase().endsWith(".xls")) {
-                    emit("Text extracted from legacy .xls (approximate — convert to .xlsx for exact columns).")
-                } else {
-                    emit("Table extracted from spreadsheet (formatting not preserved).")
-                }
+                extractSpreadsheetToTab(uri, name)
             } catch (e: Throwable) {
                 emit("Could not read spreadsheet: ${e.message}")
             } finally {
                 isBusy = false
             }
+        }
+    }
+
+    /** Extract a spreadsheet's cells as a tab-separated table into an editable buffer. */
+    private suspend fun extractSpreadsheetToTab(uri: Uri, name: String, startEditing: Boolean = false) {
+        val text = withContext(Dispatchers.IO) { SpreadsheetExtractor.extract(resolver, uri, name) }
+        if (text.isBlank()) {
+            emit("No readable content found in \"$name\".")
+            return
+        }
+        val (normalized, ending) = normalizeIn(text)
+        val baseName = name.substringBeforeLast('.') + ".txt"
+        val id = UUID.randomUUID().toString()
+        val doc = DocumentState(
+            id = id, uri = null, displayName = baseName, encoding = TextEncoding.UTF_8,
+            lineEnding = ending, language = SyntaxLanguage.PLAIN,
+            loadMode = LoadMode.EDITABLE, isModified = true,
+            stats = TextStats.of(normalized, normalized.toByteArray().size.toLong()),
+        )
+        val tab = EditorTab(doc, TextFieldValue(normalized)).also {
+            it.savedSignature = -1; it.reading = !startEditing
+        }
+        tabs.add(tab); activeIndex = tabs.lastIndex
+        if (name.lowercase().endsWith(".xls")) {
+            emit("Text extracted from legacy .xls (approximate — convert to .xlsx for exact columns).")
+        } else {
+            emit("Cells extracted as a table — formatting is not saved back to .xlsx.")
         }
     }
 
@@ -1250,3 +1324,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
 /** A request to view a (typically scanned) PDF as page images. */
 data class PdfViewRequest(val uri: Uri, val name: String)
+
+/** Which kind of office document a formatted HTML view was built from. */
+enum class DocKind { WORD, SPREADSHEET }
+
+/** A request to show a Word/Excel document as formatted, read-only HTML. */
+data class HtmlViewRequest(val uri: Uri, val name: String, val html: String, val kind: DocKind)

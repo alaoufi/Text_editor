@@ -386,6 +386,14 @@ fun AppRoot(
             )
         }
 
+        viewModel.htmlViewer?.let { req ->
+            HtmlDocViewer(
+                request = req,
+                onEdit = { viewModel.editHtmlDoc() },
+                onClose = { viewModel.closeHtmlViewer() },
+            )
+        }
+
         viewModel.updateInfo?.let { info ->
             UpdateDialog(
                 versionName = info.versionName,

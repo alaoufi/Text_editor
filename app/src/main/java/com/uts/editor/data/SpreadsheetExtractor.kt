@@ -25,6 +25,62 @@ object SpreadsheetExtractor {
         if (name.lowercase().endsWith(".xlsx")) extractXlsx(resolver, uri)
         else BinaryTextRecovery.recover(readAllBytes(resolver, uri))
 
+    /** Render an .xlsx as an HTML table (preserves the grid); "" for legacy .xls. */
+    fun toHtml(resolver: ContentResolver, uri: Uri, name: String): String {
+        if (!name.lowercase().endsWith(".xlsx")) return ""
+        val entries = readZipEntries(resolver, uri) { it.startsWith("xl/") }
+        val shared = entries["xl/sharedStrings.xml"]
+            ?.let { parseSharedStrings(String(it, Charsets.UTF_8)) } ?: emptyList()
+        val sheetNames = entries["xl/workbook.xml"]
+            ?.let { parseSheetNames(String(it, Charsets.UTF_8)) } ?: emptyList()
+        val sheetFiles = entries.keys
+            .filter { it.matches(Regex("xl/worksheets/sheet\\d+\\.xml")) }
+            .sortedBy { it.substringAfter("sheet").substringBefore(".xml").toIntOrNull() ?: 0 }
+        val sb = StringBuilder()
+        sheetFiles.forEachIndexed { i, sheetFile ->
+            if (sheetFiles.size > 1) {
+                sb.append("<h3>").append(escapeHtml(sheetNames.getOrNull(i) ?: "Sheet ${i + 1}")).append("</h3>")
+            }
+            sb.append(sheetToHtml(String(entries[sheetFile]!!, Charsets.UTF_8), shared))
+        }
+        return wrapHtml(sb.toString())
+    }
+
+    private fun sheetToHtml(xml: String, shared: List<String>): String {
+        val rowRegex = Regex("<row\\b[^>]*>([\\s\\S]*?)</row>")
+        val cellRegex = Regex("<c\\b([^>]*)>([\\s\\S]*?)</c>|<c\\b([^>]*)/>")
+        val out = StringBuilder("<table>")
+        for (row in rowRegex.findAll(xml)) {
+            val cells = sortedMapOf<Int, String>()
+            for (c in cellRegex.findAll(row.groupValues[1])) {
+                val attrs = c.groupValues[1].ifEmpty { c.groupValues[3] }
+                val ref = Regex("r=\"([A-Z]+)\\d+\"").find(attrs)?.groupValues?.get(1)
+                val col = ref?.let { columnIndex(it) } ?: cells.size
+                cells[col] = cellValue(attrs, c.groupValues[2], shared)
+            }
+            out.append("<tr>")
+            val maxCol = cells.lastKey().takeIf { cells.isNotEmpty() } ?: -1
+            for (col in 0..maxCol) {
+                out.append("<td>").append(escapeHtml(cells[col] ?: "").ifEmpty { "&nbsp;" }).append("</td>")
+            }
+            out.append("</tr>")
+        }
+        out.append("</table>")
+        return out.toString()
+    }
+
+    private fun escapeHtml(s: String): String =
+        s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    private fun wrapHtml(body: String): String = """
+        <!doctype html><html dir="auto"><head><meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>body{font-family:sans-serif;padding:8px;color:#111;background:#fff}
+        table{border-collapse:collapse;margin:6px 0}
+        td{border:1px solid #999;padding:5px;white-space:nowrap}
+        h3{margin:10px 0 4px}</style></head><body>$body</body></html>
+    """.trimIndent()
+
     // ---- XLSX (ZIP + XML) ----
 
     private fun extractXlsx(resolver: ContentResolver, uri: Uri): String {
