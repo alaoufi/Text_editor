@@ -177,7 +177,7 @@ fun FileNameDialog(
 }
 
 private val FILE_FORMATS = listOf(
-    "txt", "md", "json", "xml", "html", "css", "js", "ts", "csv",
+    "txt", "docx", "xlsx", "md", "json", "xml", "html", "css", "js", "ts", "csv",
     "log", "yaml", "yml", "ini", "conf", "sql", "py", "sh", "kt", "java", "php",
 )
 

@@ -15,6 +15,7 @@ import androidx.lifecycle.viewModelScope
 import com.uts.editor.BuildConfig
 import com.uts.editor.UtsApplication
 import com.uts.editor.data.DocxHtmlConverter
+import com.uts.editor.data.DocxWriter
 import com.uts.editor.data.EncodingDetector
 import com.uts.editor.data.FileIo
 import com.uts.editor.data.PdfExtractor
@@ -23,6 +24,7 @@ import com.uts.editor.data.SettingsStore
 import com.uts.editor.data.SpreadsheetExtractor
 import com.uts.editor.data.UpdateChecker
 import com.uts.editor.data.WordExtractor
+import com.uts.editor.data.XlsxWriter
 import com.uts.editor.data.ZipSupport
 import com.uts.editor.model.DocumentState
 import com.uts.editor.model.LineEnding
@@ -439,10 +441,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val (normalized, ending) = normalizeIn(editable.text)
-        val baseName = name.substringBeforeLast('.') + ".txt"
+        // Keep the original .docx name so saving writes back a real .docx.
         val id = UUID.randomUUID().toString()
         val doc = DocumentState(
-            id = id, uri = null, displayName = baseName, encoding = TextEncoding.UTF_8,
+            id = id, uri = null, displayName = name, encoding = TextEncoding.UTF_8,
             lineEnding = ending, language = SyntaxLanguage.PLAIN,
             loadMode = LoadMode.EDITABLE, isModified = true,
             stats = TextStats.of(normalized, normalized.toByteArray().size.toLong()),
@@ -454,7 +456,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             editable.aligns.forEach { (line, code) -> it.lineAligns[line] = code }
         }
         tabs.add(tab); activeIndex = tabs.lastIndex
-        emit("Opened for editing — formatting kept where the editor supports it (saved as .txt or HTML).")
+        emit("Opened for editing — save keeps the .docx format and its formatting.")
     }
 
     /** Extract a Word document's text into a new editable .txt buffer. */
@@ -465,9 +467,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val (normalized, ending) = normalizeIn(text)
-        // Present extracted text as a new editable .txt buffer (no source Uri,
-        // so saving goes through Save As to a real text file).
-        val baseName = name.substringBeforeLast('.') + ".txt"
+        // A .docx keeps its name (saved back natively); legacy .doc has no light
+        // writer, so it becomes an editable .txt buffer.
+        val baseName = if (name.lowercase().endsWith(".docx")) name
+            else name.substringBeforeLast('.') + ".txt"
         val id = UUID.randomUUID().toString()
         val doc = DocumentState(
             id = id, uri = null, displayName = baseName, encoding = TextEncoding.UTF_8,
@@ -480,9 +483,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
         tabs.add(tab); activeIndex = tabs.lastIndex
         if (name.lowercase().endsWith(".doc")) {
-            emit("Text extracted from .doc (approximate — formatting not preserved).")
-        } else {
-            emit("Text extracted for editing — formatting is not saved back to .docx.")
+            emit("Text extracted from .doc (approximate — save as .txt).")
         }
     }
 
@@ -531,7 +532,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val (normalized, ending) = normalizeIn(text)
-        val baseName = name.substringBeforeLast('.') + ".txt"
+        // An .xlsx keeps its name (saved back natively as a real spreadsheet);
+        // legacy .xls has no light writer, so it becomes an editable .txt buffer.
+        val baseName = if (name.lowercase().endsWith(".xlsx")) name
+            else name.substringBeforeLast('.') + ".txt"
         val id = UUID.randomUUID().toString()
         val doc = DocumentState(
             id = id, uri = null, displayName = baseName, encoding = TextEncoding.UTF_8,
@@ -544,9 +548,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
         tabs.add(tab); activeIndex = tabs.lastIndex
         if (name.lowercase().endsWith(".xls")) {
-            emit("Text extracted from legacy .xls (approximate — convert to .xlsx for exact columns).")
+            emit("Text extracted from legacy .xls (approximate — save as .txt).")
         } else {
-            emit("Cells extracted as a table — formatting is not saved back to .xlsx.")
+            emit("Opened for editing — save keeps the .xlsx spreadsheet format.")
         }
     }
 
@@ -1098,9 +1102,21 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             isBusy = true
             try {
+                // Save back in the document's own format when it is an Office file:
+                // .docx/.xlsx are written natively (dependency-free OOXML), so the
+                // original format is preserved instead of flattening to text.
+                val target = tab.doc.displayName.lowercase()
                 withContext(Dispatchers.IO) {
-                    FileIo.writeAll(resolver, uri, tab.field.text, encoding, tab.doc.lineEnding)
-                    settingsStore.rememberEncoding(uri.toString(), encoding.id)
+                    when {
+                        target.endsWith(".docx") ->
+                            DocxWriter.write(resolver, uri, tab.field.text, tab.spans.toList(), tab.lineAligns.toMap())
+                        target.endsWith(".xlsx") ->
+                            XlsxWriter.write(resolver, uri, tab.field.text)
+                        else -> {
+                            FileIo.writeAll(resolver, uri, tab.field.text, encoding, tab.doc.lineEnding)
+                            settingsStore.rememberEncoding(uri.toString(), encoding.id)
+                        }
+                    }
                 }
                 tab.markSaved()
                 tab.doc = tab.doc.copy(encoding = encoding, isModified = false)

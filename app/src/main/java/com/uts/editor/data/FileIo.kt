@@ -42,6 +42,12 @@ object FileIo {
         val ext = name.substringAfterLast('.', "").lowercase()
         // octet-stream maps to no extension, so the provider never appends one.
         if (ext.isEmpty()) return "application/octet-stream"
+        // Office formats aren't always in the platform MIME map; pin them so the
+        // storage provider keeps the .docx/.xlsx extension on Save As.
+        when (ext) {
+            "docx" -> return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            "xlsx" -> return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        }
         return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
     }
 
