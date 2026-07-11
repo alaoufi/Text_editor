@@ -66,8 +66,10 @@ object DocxHtmlConverter {
                 val bold = forceBold || rpr.contains("<w:b/>") || rpr.contains("<w:b ")
                 val italic = rpr.contains("<w:i/>") || rpr.contains("<w:i ")
                 val underline = rpr.contains("<w:u ")
-                if (bold || italic || underline || sizeSp != null) {
-                    spans.add(RichSpan(start, end, bold = bold, italic = italic, underline = underline, sizeSp = sizeSp))
+                val colorInt = Regex("<w:color\\b[^>]*w:val=\"([0-9A-Fa-f]{6})\"").find(rpr)?.groupValues?.get(1)
+                    ?.let { runCatching { (0xFF shl 24) or it.toInt(16) }.getOrNull() }
+                if (bold || italic || underline || sizeSp != null || colorInt != null) {
+                    spans.add(RichSpan(start, end, bold = bold, italic = italic, underline = underline, sizeSp = sizeSp, color = colorInt))
                 }
             }
             if (hasBr) appendNewline()
@@ -133,21 +135,49 @@ object DocxHtmlConverter {
     }
 
     fun toHtml(resolver: ContentResolver, uri: Uri): String {
-        val xmlBytes = readZipEntry(resolver, uri, "word/document.xml") ?: return ""
+        // Read the main part, its relationships and any embedded images in one
+        // pass so pictures can be inlined as data URIs (a .docx keeps images in
+        // word/media/, referenced by relationship id).
+        val entries = readEntries(resolver, uri) {
+            it == "word/document.xml" || it == "word/_rels/document.xml.rels" || it.startsWith("word/media/")
+        }
+        val xmlBytes = entries["word/document.xml"] ?: return ""
         val xml = String(xmlBytes, Charsets.UTF_8)
         val body = Regex("<w:body>([\\s\\S]*)</w:body>").find(xml)?.groupValues?.get(1) ?: xml
+        val images = buildImageMap(entries)
         val sb = StringBuilder()
         // Walk tables and the paragraphs between them in document order. Assumes
         // tables are not nested (the common case).
         var last = 0
         for (m in Regex("<w:tbl>[\\s\\S]*?</w:tbl>").findAll(body)) {
-            sb.append(convertParagraphs(body.substring(last, m.range.first)))
-            sb.append(convertTable(m.value))
+            sb.append(convertParagraphs(body.substring(last, m.range.first), images))
+            sb.append(convertTable(m.value, images))
             last = m.range.last + 1
         }
-        sb.append(convertParagraphs(body.substring(last)))
+        sb.append(convertParagraphs(body.substring(last), images))
         val bodyHtml = sb.toString()
         return wrap(bodyHtml, TextDirection.dominant(plainText(body)))
+    }
+
+    /** relationship id -> inline "data:image/...;base64,..." for each embedded picture. */
+    private fun buildImageMap(entries: Map<String, ByteArray>): Map<String, String> {
+        val rels = entries["word/_rels/document.xml.rels"]?.let { String(it, Charsets.UTF_8) } ?: return emptyMap()
+        val map = HashMap<String, String>()
+        for (rel in Regex("<Relationship\\b[^>]*/?>").findAll(rels)) {
+            val tag = rel.value
+            if (!tag.contains("/image")) continue
+            val id = Regex("Id=\"([^\"]+)\"").find(tag)?.groupValues?.get(1) ?: continue
+            var target = Regex("Target=\"([^\"]+)\"").find(tag)?.groupValues?.get(1) ?: continue
+            target = target.removePrefix("/word/").removePrefix("../").removePrefix("/")
+            val path = if (target.startsWith("word/")) target else "word/$target"
+            val bytes = entries[path] ?: entries["word/${target.substringAfterLast("../")}"] ?: continue
+            val mime = when (target.substringAfterLast('.').lowercase()) {
+                "png" -> "image/png"; "gif" -> "image/gif"; "bmp" -> "image/bmp"
+                "svg" -> "image/svg+xml"; "webp" -> "image/webp"; else -> "image/jpeg"
+            }
+            map[id] = "data:$mime;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        }
+        return map
     }
 
     /** All visible run text of the document, for base-direction detection. */
@@ -155,16 +185,16 @@ object DocxHtmlConverter {
         Regex("<w:t\\b[^>]*>([\\s\\S]*?)</w:t>").findAll(body)
             .joinToString(" ") { unescapeXml(it.groupValues[1]) }
 
-    private fun convertParagraphs(segment: String): String {
+    private fun convertParagraphs(segment: String, images: Map<String, String>): String {
         val out = StringBuilder()
         for (p in Regex("<w:p\\b[\\s\\S]*?</w:p>").findAll(segment)) {
-            out.append(convertParagraph(p.value))
+            out.append(convertParagraph(p.value, images))
         }
         return out.toString()
     }
 
-    private fun convertParagraph(p: String): String {
-        val inner = runsToHtml(p)
+    private fun convertParagraph(p: String, images: Map<String, String>): String {
+        val inner = runsToHtml(p, images)
         val heading = Regex("<w:pStyle\\b[^>]*w:val=\"Heading(\\d)\"").find(p)?.groupValues?.get(1)?.toIntOrNull()
         val align = when (Regex("<w:jc\\b[^>]*w:val=\"([^\"]*)\"").find(p)?.groupValues?.get(1)) {
             "center" -> "center"
@@ -182,10 +212,16 @@ object DocxHtmlConverter {
         else "<p dir=\"auto\"$style>$inner</p>"
     }
 
-    private fun runsToHtml(scope: String): String {
+    private fun runsToHtml(scope: String, images: Map<String, String>): String {
         val out = StringBuilder()
         for (r in Regex("<w:r\\b[\\s\\S]*?</w:r>").findAll(scope)) {
             val run = r.value
+            // Inline any embedded picture (w:drawing / VML) referenced by this run.
+            if (run.contains("<w:drawing") || run.contains("<w:pict") || run.contains("<w:object")) {
+                val relId = Regex("r:embed=\"([^\"]+)\"").find(run)?.groupValues?.get(1)
+                    ?: Regex("r:id=\"([^\"]+)\"").find(run)?.groupValues?.get(1)
+                images[relId]?.let { out.append("<img src=\"$it\" style=\"max-width:100%;height:auto\"/>") }
+            }
             val rpr = Regex("<w:rPr>[\\s\\S]*?</w:rPr>").find(run)?.value ?: ""
             var text = Regex("<w:t\\b[^>]*>([\\s\\S]*?)</w:t>").findAll(run)
                 .joinToString("") { escape(unescapeXml(it.groupValues[1])) }
@@ -195,17 +231,27 @@ object DocxHtmlConverter {
             if (rpr.contains("<w:b/>") || rpr.contains("<w:b ")) text = "<b>$text</b>"
             if (rpr.contains("<w:i/>") || rpr.contains("<w:i ")) text = "<i>$text</i>"
             if (rpr.contains("<w:u ")) text = "<u>$text</u>"
+            // Run text colour (skip "auto"/black-by-default so themes still adapt).
+            val color = Regex("<w:color\\b[^>]*w:val=\"([0-9A-Fa-f]{6})\"").find(rpr)?.groupValues?.get(1)
+            if (color != null && !color.equals("auto", true)) text = "<span style=\"color:#$color\">$text</span>"
+            // Highlight / cell-run shading -> background colour.
+            val hi = Regex("<w:highlight\\b[^>]*w:val=\"([a-zA-Z]+)\"").find(rpr)?.groupValues?.get(1)
+            if (hi != null && !hi.equals("none", true)) text = "<span style=\"background:$hi\">$text</span>"
             out.append(text)
         }
         return out.toString()
     }
 
-    private fun convertTable(tbl: String): String {
+    private fun convertTable(tbl: String, images: Map<String, String>): String {
         val out = StringBuilder("<table>")
         for (tr in Regex("<w:tr\\b[\\s\\S]*?</w:tr>").findAll(tbl)) {
             out.append("<tr>")
             for (tc in Regex("<w:tc\\b[\\s\\S]*?</w:tc>").findAll(tr.value)) {
-                out.append("<td dir=\"auto\">").append(convertParagraphs(tc.value).ifBlank { "&nbsp;" }).append("</td>")
+                // Cell shading -> background colour.
+                val shd = Regex("<w:shd\\b[^>]*w:fill=\"([0-9A-Fa-f]{6})\"").find(tc.value)?.groupValues?.get(1)
+                val bg = if (shd != null && !shd.equals("auto", true) && !shd.equals("FFFFFF", true))
+                    " style=\"background:#$shd\"" else ""
+                out.append("<td dir=\"auto\"$bg>").append(convertParagraphs(tc.value, images).ifBlank { "&nbsp;" }).append("</td>")
             }
             out.append("</tr>")
         }
@@ -232,6 +278,36 @@ object DocxHtmlConverter {
         if (s.indexOf('&') < 0) return s
         return s.replace("&lt;", "<").replace("&gt;", ">")
             .replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&")
+    }
+
+    /** Read every entry matching [keep] from the .docx zip in a single pass. */
+    private fun readEntries(
+        resolver: ContentResolver,
+        uri: Uri,
+        keep: (String) -> Boolean,
+    ): Map<String, ByteArray> {
+        val map = HashMap<String, ByteArray>()
+        resolver.openInputStream(uri).use { input ->
+            input ?: return map
+            // Tolerate a corrupt entry (e.g. a bad-CRC image): keep whatever was
+            // read so far — document.xml/relationships come first, so text and
+            // colours always survive even if a later picture fails.
+            runCatching {
+                ZipInputStream(input).use { zip ->
+                    var e = zip.nextEntry
+                    val buf = ByteArray(64 * 1024)
+                    while (e != null) {
+                        if (!e.isDirectory && keep(e.name)) {
+                            val out = ByteArrayOutputStream()
+                            while (true) { val n = zip.read(buf); if (n == -1) break; out.write(buf, 0, n) }
+                            map[e.name] = out.toByteArray()
+                        }
+                        zip.closeEntry(); e = zip.nextEntry
+                    }
+                }
+            }
+        }
+        return map
     }
 
     private fun readZipEntry(resolver: ContentResolver, uri: Uri, entryName: String): ByteArray? {
