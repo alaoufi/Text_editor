@@ -166,7 +166,10 @@ object DocBinaryExtractor {
         }
         return sb.toString()
             .replace(Regex("[ \\t]+\n"), "\n")
-            .replace(Regex("\n{3,}"), "\n\n")
+            // Diagram/SmartArt .doc files put an empty paragraph between every
+            // label, which reads as scattered text. Collapse blank lines so the
+            // content comes through as a tight list.
+            .replace(Regex("\n{2,}"), "\n")
             .trim()
     }
 
