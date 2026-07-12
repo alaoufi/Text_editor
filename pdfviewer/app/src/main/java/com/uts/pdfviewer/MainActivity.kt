@@ -42,7 +42,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,7 +53,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -104,30 +102,6 @@ private fun PdfScreen(uri: Uri, onClose: () -> Unit) {
     val context = LocalContext.current
     val density = LocalDensity.current
     val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
-
-    // Save a copy of the open PDF to a location the user picks.
-    val saveCopy = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/pdf")
-    ) { dest ->
-        if (dest != null) scope.launch(Dispatchers.IO) {
-            runCatching {
-                context.contentResolver.openInputStream(uri)?.use { input ->
-                    context.contentResolver.openOutputStream(dest)?.use { out -> input.copyTo(out) }
-                }
-            }
-        }
-    }
-    fun suggestedName(): String {
-        var name = "copy.pdf"
-        runCatching {
-            context.contentResolver.query(uri, null, null, null, null)?.use { c ->
-                val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                if (i >= 0 && c.moveToFirst() && !c.isNull(i)) name = c.getString(i)
-            }
-        }
-        return name
-    }
 
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
@@ -144,16 +118,11 @@ private fun PdfScreen(uri: Uri, onClose: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { saveCopy.launch(suggestedName()) }) {
-                        Text("نسخ")
-                    }
-                    TextButton(onClick = {
-                        val pm = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
-                        pm.print("PDF", PdfPrintAdapter(context, uri, "PDF"), null)
-                    }) {
-                        Text("طباعة")
-                    }
+                TextButton(onClick = {
+                    val pm = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
+                    pm.print("PDF", PdfPrintAdapter(context, uri, "PDF"), null)
+                }) {
+                    Text("طباعة")
                 }
                 IconButton(onClick = onClose, modifier = Modifier.size(44.dp)) {
                     Icon(Icons.Filled.Close, contentDescription = "إغلاق", modifier = Modifier.size(24.dp))
