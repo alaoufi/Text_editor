@@ -24,9 +24,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import android.content.Context
+import android.print.PrintManager
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -108,13 +111,19 @@ private fun PdfScreen(uri: Uri, onClose: () -> Unit) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        // Top bar: only a Close button.
+        // Top bar: Print + Close.
         Surface(tonalElevation = 3.dp) {
             androidx.compose.foundation.layout.Row(
                 Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.End,
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
+                TextButton(onClick = {
+                    val pm = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
+                    pm.print("PDF", PdfPrintAdapter(context, uri, "PDF"), null)
+                }) {
+                    Text("طباعة")
+                }
                 IconButton(onClick = onClose, modifier = Modifier.size(44.dp)) {
                     Icon(Icons.Filled.Close, contentDescription = "إغلاق", modifier = Modifier.size(24.dp))
                 }
