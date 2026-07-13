@@ -207,6 +207,11 @@ private fun PdfPageView(pages: PdfPages, index: Int, widthPx: Int) {
         value = true to bmp
     }
     val (done, bmp) = state
+    // Recycle this page's bitmap when the row leaves the list (scrolled far away)
+    // so a long PDF doesn't accumulate large bitmaps and exhaust memory.
+    DisposableEffect(bmp) {
+        onDispose { bmp?.let { if (!it.isRecycled) it.recycle() } }
+    }
     when {
         bmp != null -> Image(
             bitmap = bmp.asImageBitmap(),

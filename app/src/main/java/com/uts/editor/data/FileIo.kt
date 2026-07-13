@@ -21,7 +21,10 @@ import java.io.InputStreamReader
 object FileIo {
 
     /** Above this size we open read-only in paged mode instead of loading everything. */
-    const val EDITABLE_LIMIT_BYTES = 16L * 1024 * 1024      // 16 MB editable
+    // A single Compose text field bogs down (and can freeze the keyboard) well
+    // before a few MB of text, so keep the fully-editable limit conservative;
+    // larger files open in fast read-only paged mode instead.
+    const val EDITABLE_LIMIT_BYTES = 2L * 1024 * 1024       // 2 MB editable
     const val ABSOLUTE_LIMIT_BYTES = 500L * 1024 * 1024     // 500 MB hard ceiling
     private const val DETECT_SAMPLE = 256 * 1024            // bytes sampled for detection
     private const val READ_BUFFER = 64 * 1024

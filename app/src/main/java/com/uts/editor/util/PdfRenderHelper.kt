@@ -130,8 +130,10 @@ class PdfPages(
         /** Conservative max texture dimension supported by essentially all GPUs. */
         const val MAX_DIM = 2048
 
-        /** OCR bitmaps aren't shown, so they may exceed the GPU texture limit. */
-        const val MAX_DIM_OCR = 3000
-        const val OCR_PX_CAP = 12_000_000L
+        /** OCR bitmaps aren't shown, so they may exceed the GPU texture limit —
+         *  but keep the ceiling modest: OCR renders + a grayscale copy exist at
+         *  once, so 8 MP ≈ two 32 MB bitmaps, which low-RAM devices can survive. */
+        const val MAX_DIM_OCR = 2600
+        const val OCR_PX_CAP = 8_000_000L
     }
 }

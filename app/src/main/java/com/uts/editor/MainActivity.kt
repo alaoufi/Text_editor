@@ -61,4 +61,17 @@ class MainActivity : ComponentActivity() {
         // Flush a recovery snapshot whenever we leave the foreground.
         viewModel?.autosaveNow()
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Deep cleanup of transient render caches (PDF page copies, export temp)
+        // so nothing large lingers after the app closes. Recovery drafts and OCR
+        // language data live elsewhere and are intentionally kept.
+        runCatching { java.io.File(cacheDir, "pdfview").deleteRecursively() }
+        runCatching {
+            cacheDir.listFiles()?.forEach { f ->
+                if (f.isFile && (f.name.endsWith(".pdf") || f.name.endsWith(".tmp"))) f.delete()
+            }
+        }
+    }
 }
