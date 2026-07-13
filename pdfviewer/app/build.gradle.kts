@@ -12,8 +12,8 @@ android {
         applicationId = "com.uts.pdfviewer"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 5
+        versionName = "1.4"
         vectorDrawables { useSupportLibrary = true }
         resourceConfigurations += listOf("en", "ar")
     }
@@ -56,6 +56,8 @@ dependencies {
 
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-compose:1.9.2")
+    // Serves the bundled pdf.js assets + the opened PDF to the WebView locally.
+    implementation("androidx.webkit:webkit:1.11.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.material3:material3")

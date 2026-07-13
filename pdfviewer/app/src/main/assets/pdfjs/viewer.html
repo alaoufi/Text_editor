@@ -1,0 +1,81 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=6, user-scalable=yes">
+<style>
+  html,body{margin:0;padding:0;background:#525659;}
+  #pages{display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:10px;}
+  .page{position:relative;background:#fff;box-shadow:0 1px 5px rgba(0,0,0,.45);}
+  canvas{display:block;}
+  /* Transparent, positioned text spans over the canvas → native selection + copy. */
+  .textLayer{position:absolute;left:0;top:0;right:0;bottom:0;overflow:hidden;line-height:1;
+    -webkit-text-size-adjust:none;text-size-adjust:none;}
+  .textLayer span,.textLayer br{color:transparent;position:absolute;white-space:pre;
+    cursor:text;transform-origin:0 0;}
+  .textLayer ::selection{background:rgba(0,120,255,.35);}
+  #msg{color:#eee;font-family:sans-serif;text-align:center;padding:24px;}
+</style>
+</head>
+<body>
+<div id="pages"></div>
+<div id="msg"></div>
+<script src="pdf.min.js"></script>
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "pdf.worker.min.js";
+  var dpr = window.devicePixelRatio || 1;
+
+  function showMsg(t){ document.getElementById('msg').textContent = t; }
+
+  (async function () {
+    try {
+      var pdf = await pdfjsLib.getDocument({ url: "/pdf/doc.pdf" }).promise;
+      var container = document.getElementById('pages');
+      var cssWidth = document.documentElement.clientWidth - 8;
+
+      for (var n = 1; n <= pdf.numPages; n++) {
+        var page = await pdf.getPage(n);
+        var base = page.getViewport({ scale: 1 });
+        var fit = Math.max(0.2, cssWidth / base.width);
+        var cssViewport = page.getViewport({ scale: fit });
+        var renderViewport = page.getViewport({ scale: fit * dpr });
+
+        var div = document.createElement('div');
+        div.className = 'page';
+        div.style.width = cssViewport.width + 'px';
+        div.style.height = cssViewport.height + 'px';
+        // Required by pdf.js so text-layer spans line up with the canvas (for
+        // accurate selection). Must equal the CSS viewport scale.
+        div.style.setProperty('--scale-factor', String(fit));
+
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.floor(renderViewport.width);
+        canvas.height = Math.floor(renderViewport.height);
+        canvas.style.width = cssViewport.width + 'px';
+        canvas.style.height = cssViewport.height + 'px';
+        div.appendChild(canvas);
+
+        var textLayerDiv = document.createElement('div');
+        textLayerDiv.className = 'textLayer';
+        textLayerDiv.style.width = cssViewport.width + 'px';
+        textLayerDiv.style.height = cssViewport.height + 'px';
+        div.appendChild(textLayerDiv);
+
+        container.appendChild(div);
+
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport: renderViewport }).promise;
+        var textContent = await page.getTextContent();
+        pdfjsLib.renderTextLayer({
+          textContentSource: textContent,
+          container: textLayerDiv,
+          viewport: cssViewport,
+          textDivs: []
+        });
+      }
+    } catch (e) {
+      showMsg("تعذّر عرض الملف: " + (e && e.message ? e.message : e));
+    }
+  })();
+</script>
+</body>
+</html>

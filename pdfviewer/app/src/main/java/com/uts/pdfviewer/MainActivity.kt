@@ -1,43 +1,38 @@
 package com.uts.pdfviewer
 
+import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
+import android.print.PrintManager
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import android.content.Context
-import android.print.PrintManager
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -45,19 +40,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.webkit.WebViewAssetLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 
 /**
- * A deliberately minimal PDF viewer: it opens a PDF, shows its pages, and offers
- * a single Close button. No editing, no tools, no menus.
+ * A minimal PDF viewer that shows the PDF with pdf.js in a WebView, so the real
+ * text layer is selectable and copyable (no OCR). Only Print and Close actions.
  */
 class MainActivity : ComponentActivity() {
 
@@ -74,7 +69,11 @@ class MainActivity : ComponentActivity() {
 
                     val current = uri
                     if (current == null) {
-                        PickScreen(onPick = { picker.launch(arrayOf("application/pdf")) })
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Button(onClick = { picker.launch(arrayOf("application/pdf")) }) {
+                                Text("افتح ملف PDF")
+                            }
+                        }
                     } else {
                         PdfScreen(uri = current, onClose = { finish() })
                     }
@@ -91,29 +90,26 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun PickScreen(onPick: () -> Unit) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Button(onClick = onPick) { Text("افتح ملف PDF") }
-    }
-}
-
-@Composable
 private fun PdfScreen(uri: Uri, onClose: () -> Unit) {
     val context = LocalContext.current
-    val density = LocalDensity.current
-    val listState = rememberLazyListState()
 
-    var scale by remember { mutableStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        scale = (scale * zoomChange).coerceIn(1f, 6f)
-        offset = if (scale > 1f) offset + panChange else Offset.Zero
+    // Copy the PDF to a private cache file once, off the main thread.
+    val cacheFile by produceState<File?>(initialValue = null, uri) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                val dir = File(context.cacheDir, "pdfview").apply { mkdirs() }
+                val f = File(dir, "doc.pdf")
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    FileOutputStream(f).use { input.copyTo(it) }
+                }
+                f
+            }.getOrNull()
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
-        // Top bar: Print + Close.
         Surface(tonalElevation = 3.dp) {
-            androidx.compose.foundation.layout.Row(
+            Row(
                 Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -121,80 +117,54 @@ private fun PdfScreen(uri: Uri, onClose: () -> Unit) {
                 TextButton(onClick = {
                     val pm = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
                     pm.print("PDF", PdfPrintAdapter(context, uri, "PDF"), null)
-                }) {
-                    Text("طباعة")
-                }
+                }) { Text("طباعة") }
                 IconButton(onClick = onClose, modifier = Modifier.size(44.dp)) {
                     Icon(Icons.Filled.Close, contentDescription = "إغلاق", modifier = Modifier.size(24.dp))
                 }
             }
         }
 
-        val holder = remember(uri) { object { var pages: PdfPages? = null } }
-        val result by produceState<Result<PdfPages>?>(initialValue = null, uri) {
-            val r = withContext(Dispatchers.IO) {
-                runCatching { PdfRenderHelper.open(context, uri) ?: error("open failed") }
-            }
-            holder.pages = r.getOrNull()
-            value = r
-        }
-        DisposableEffect(uri) { onDispose { holder.pages?.close() } }
-
-        val pages = result?.getOrNull()
-        when {
-            result == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-            pages == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("تعذّر فتح الملف", modifier = Modifier.padding(24.dp))
-            }
-            else -> BoxWithConstraints(Modifier.fillMaxSize()) {
-                val widthPx = with(density) { maxWidth.toPx() }.toInt().coerceIn(1, 2048)
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .transformable(transformState)
-                        .pointerInput(Unit) {
-                            detectTapGestures(onDoubleTap = {
-                                if (scale > 1f) { scale = 1f; offset = Offset.Zero } else scale = 2.5f
-                            })
-                        }
-                        .graphicsLayer {
-                            scaleX = scale; scaleY = scale
-                            translationX = offset.x; translationY = offset.y
-                        }
-                ) {
-                    LazyColumn(
-                        Modifier.fillMaxSize(),
-                        state = listState,
-                        userScrollEnabled = scale <= 1.05f,
-                    ) {
-                        items(pages.pageCount) { index -> PageView(pages, index, widthPx) }
-                    }
-                }
-            }
+        val file = cacheFile
+        if (file == null) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        } else {
+            PdfWebView(file, Modifier.fillMaxSize())
         }
     }
 }
 
+@SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun PageView(pages: PdfPages, index: Int, widthPx: Int) {
-    val state by produceState(initialValue = false to (null as Bitmap?), index, widthPx) {
-        val bmp = withContext(Dispatchers.IO) { runCatching { pages.render(index, widthPx) }.getOrNull() }
-        value = true to bmp
-    }
-    val (done, bmp) = state
-    when {
-        bmp != null -> Image(
-            bitmap = bmp.asImageBitmap(),
-            contentDescription = null,
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp, horizontal = 4.dp),
-        )
-        done -> Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-            Text("تعذّر عرض الصفحة ${index + 1}")
-        }
-        else -> Box(Modifier.fillMaxWidth().height(360.dp), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
-    }
+private fun PdfWebView(pdfFile: File, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    AndroidView(
+        modifier = modifier,
+        factory = { ctx ->
+            val assetLoader = WebViewAssetLoader.Builder()
+                .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(ctx))
+                .addPathHandler("/pdf/") { _ ->
+                    runCatching {
+                        WebResourceResponse("application/pdf", null, FileInputStream(pdfFile))
+                    }.getOrNull()
+                }
+                .build()
+
+            WebView(ctx).apply {
+                settings.javaScriptEnabled = true
+                settings.builtInZoomControls = true
+                settings.displayZoomControls = false
+                settings.setSupportZoom(true)
+                settings.allowFileAccess = false
+                settings.allowContentAccess = false
+                isVerticalScrollBarEnabled = true
+                webViewClient = object : WebViewClient() {
+                    override fun shouldInterceptRequest(
+                        view: WebView,
+                        request: WebResourceRequest,
+                    ): WebResourceResponse? = assetLoader.shouldInterceptRequest(request.url)
+                }
+                loadUrl("https://appassets.androidplatform.net/assets/pdfjs/viewer.html")
+            }
+        },
+    )
 }
