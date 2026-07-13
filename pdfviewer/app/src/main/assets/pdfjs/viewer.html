@@ -23,58 +23,110 @@
 <script src="pdf.min.js"></script>
 <script>
   pdfjsLib.GlobalWorkerOptions.workerSrc = "pdf.worker.min.js";
-  var dpr = window.devicePixelRatio || 1;
+  // Cap the render resolution so a big page can't allocate a giant bitmap.
+  var dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  var MAX_CANVAS_PX = 3000000; // ~12 MB per page bitmap, hard ceiling
 
   function showMsg(t){ document.getElementById('msg').textContent = t; }
 
   (async function () {
+    var pdf;
     try {
-      var pdf = await pdfjsLib.getDocument({ url: "/pdf/doc.pdf" }).promise;
-      var container = document.getElementById('pages');
-      var cssWidth = document.documentElement.clientWidth - 8;
+      pdf = await pdfjsLib.getDocument({ url: "/pdf/doc.pdf" }).promise;
+    } catch (e) {
+      showMsg("تعذّر عرض الملف: " + (e && e.message ? e.message : e));
+      return;
+    }
+    var container = document.getElementById('pages');
+    var cssWidth = document.documentElement.clientWidth - 8;
+    var slots = []; // one per page: {div, fit, w, h, rendered}
 
-      for (var n = 1; n <= pdf.numPages; n++) {
-        var page = await pdf.getPage(n);
-        var base = page.getViewport({ scale: 1 });
-        var fit = Math.max(0.2, cssWidth / base.width);
-        var cssViewport = page.getViewport({ scale: fit });
-        var renderViewport = page.getViewport({ scale: fit * dpr });
+    // 1) Lay out placeholders at the correct size (no rendering yet) so the
+    //    document scrolls correctly without holding every page's bitmap.
+    for (var n = 1; n <= pdf.numPages; n++) {
+      var page = await pdf.getPage(n);
+      var base = page.getViewport({ scale: 1 });
+      var fit = Math.max(0.2, cssWidth / base.width);
+      var vp = page.getViewport({ scale: fit });
+      var div = document.createElement('div');
+      div.className = 'page';
+      div.style.width = vp.width + 'px';
+      div.style.height = vp.height + 'px';
+      div.style.setProperty('--scale-factor', String(fit));
+      container.appendChild(div);
+      slots.push({ div: div, num: n, fit: fit, w: vp.width, h: vp.height, rendered: false });
+      page.cleanup(); // release page resources until it's actually shown
+    }
 
-        var div = document.createElement('div');
-        div.className = 'page';
-        div.style.width = cssViewport.width + 'px';
-        div.style.height = cssViewport.height + 'px';
-        // Required by pdf.js so text-layer spans line up with the canvas (for
-        // accurate selection). Must equal the CSS viewport scale.
-        div.style.setProperty('--scale-factor', String(fit));
-
+    async function renderSlot(slot) {
+      if (slot.rendered) return;
+      slot.rendered = true;
+      try {
+        var page = await pdf.getPage(slot.num);
+        var scale = slot.fit * dpr;
+        // Clamp so width*height never exceeds the ceiling.
+        var w = slot.w * dpr, h = slot.h * dpr;
+        if (w * h > MAX_CANVAS_PX) { var k = Math.sqrt(MAX_CANVAS_PX / (w * h)); scale *= k; }
+        var renderVp = page.getViewport({ scale: scale });
         var canvas = document.createElement('canvas');
-        canvas.width = Math.floor(renderViewport.width);
-        canvas.height = Math.floor(renderViewport.height);
-        canvas.style.width = cssViewport.width + 'px';
-        canvas.style.height = cssViewport.height + 'px';
-        div.appendChild(canvas);
-
+        canvas.width = Math.max(1, Math.floor(renderVp.width));
+        canvas.height = Math.max(1, Math.floor(renderVp.height));
+        canvas.style.width = slot.w + 'px';
+        canvas.style.height = slot.h + 'px';
+        slot.div.appendChild(canvas);
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport: renderVp }).promise;
+        var textContent = await page.getTextContent();
         var textLayerDiv = document.createElement('div');
         textLayerDiv.className = 'textLayer';
-        textLayerDiv.style.width = cssViewport.width + 'px';
-        textLayerDiv.style.height = cssViewport.height + 'px';
-        div.appendChild(textLayerDiv);
-
-        container.appendChild(div);
-
-        await page.render({ canvasContext: canvas.getContext('2d'), viewport: renderViewport }).promise;
-        var textContent = await page.getTextContent();
+        textLayerDiv.style.width = slot.w + 'px';
+        textLayerDiv.style.height = slot.h + 'px';
+        slot.div.appendChild(textLayerDiv);
         pdfjsLib.renderTextLayer({
           textContentSource: textContent,
           container: textLayerDiv,
-          viewport: cssViewport,
+          viewport: page.getViewport({ scale: slot.fit }),
           textDivs: []
         });
+        slot.canvas = canvas;
+        slot.page = page;
+      } catch (e) {
+        slot.rendered = false;
       }
-    } catch (e) {
-      showMsg("تعذّر عرض الملف: " + (e && e.message ? e.message : e));
     }
+
+    function freeSlot(slot) {
+      if (!slot.rendered) return;
+      slot.rendered = false;
+      // Remove the heavy canvas + text layer; keep the sized placeholder.
+      while (slot.div.firstChild) slot.div.removeChild(slot.div.firstChild);
+      if (slot.canvas) { slot.canvas.width = 0; slot.canvas.height = 0; slot.canvas = null; }
+      if (slot.page) { try { slot.page.cleanup(); } catch (e) {} slot.page = null; }
+    }
+
+    // 2) Render ONLY the pages within a margin of the viewport; free the rest.
+    //    Deterministic windowing keeps memory bounded no matter how many pages
+    //    the document has (a big PDF used to render every page at once → crash).
+    var MARGIN = 1200; // px above/below the viewport to keep rendered
+    function update() {
+      var vpTop = window.scrollY || window.pageYOffset || 0;
+      var vpBot = vpTop + window.innerHeight;
+      for (var i = 0; i < slots.length; i++) {
+        var s = slots[i];
+        var top = s.div.offsetTop;
+        var bot = top + s.h;
+        var near = bot >= (vpTop - MARGIN) && top <= (vpBot + MARGIN);
+        if (near) renderSlot(s); else freeSlot(s);
+      }
+    }
+    var ticking = false;
+    function onScroll() {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(function () { ticking = false; update(); });
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
+    update();
   })();
 </script>
 </body>

@@ -33,6 +33,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -87,6 +88,12 @@ class MainActivity : ComponentActivity() {
         Intent.ACTION_SEND -> intent.getParcelableExtra(Intent.EXTRA_STREAM)
         else -> null
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Deep cleanup: remove the temporary copy of the PDF so nothing lingers.
+        runCatching { File(cacheDir, "pdfview").deleteRecursively() }
+    }
 }
 
 @Composable
@@ -131,6 +138,11 @@ private fun PdfScreen(uri: Uri, onClose: () -> Unit) {
             PdfWebView(file, Modifier.fillMaxSize())
         }
     }
+
+    // When the viewer leaves the screen, delete the temporary PDF copy.
+    DisposableEffect(uri) {
+        onDispose { runCatching { File(context.cacheDir, "pdfview").deleteRecursively() } }
+    }
 }
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -164,6 +176,16 @@ private fun PdfWebView(pdfFile: File, modifier: Modifier = Modifier) {
                     ): WebResourceResponse? = assetLoader.shouldInterceptRequest(request.url)
                 }
                 loadUrl("https://appassets.androidplatform.net/assets/pdfjs/viewer.html")
+            }
+        },
+        onRelease = { webView ->
+            // Tear the WebView down so pdf.js and its page bitmaps are freed.
+            runCatching {
+                webView.stopLoading()
+                webView.loadUrl("about:blank")
+                webView.clearHistory()
+                webView.removeAllViews()
+                webView.destroy()
             }
         },
     )
