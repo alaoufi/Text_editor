@@ -2,14 +2,14 @@
 <html>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, user-scalable=yes">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=12, user-scalable=yes">
 <style>
   html,body{margin:0;padding:0;background:#525659;}
   #pages{display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:10px;}
   .page{position:relative;background:#fff;box-shadow:0 1px 5px rgba(0,0,0,.45);}
-  canvas{display:block;}
-  /* Transparent, positioned text spans over the canvas → native selection + copy. */
-  .textLayer{position:absolute;left:0;top:0;right:0;bottom:0;overflow:hidden;line-height:1;
+  canvas.base{display:block;}
+  canvas.detail{position:absolute;pointer-events:none;z-index:1;}
+  .textLayer{position:absolute;left:0;top:0;right:0;bottom:0;overflow:hidden;line-height:1;z-index:2;
     -webkit-text-size-adjust:none;text-size-adjust:none;}
   .textLayer span,.textLayer br{color:transparent;position:absolute;white-space:pre;
     cursor:text;transform-origin:0 0;}
@@ -23,29 +23,33 @@
 <script src="pdf.min.js"></script>
 <script>
   pdfjsLib.GlobalWorkerOptions.workerSrc = "pdf.worker.min.js";
-  // Render ABOVE the screen's native pixel density (supersample) so pages are
-  // crisp — and stay crisp when pinch-zoomed. Only the pages near the viewport
-  // are rendered (see windowing below), so the higher resolution is affordable.
+
   var deviceDpr = window.devicePixelRatio || 1;
-  var dpr = Math.min(Math.max(deviceDpr, 2) * 1.5, 4.5);
-  var MAX_CANVAS_PX = 12000000; // per-page bitmap ceiling (~48 MB), a few pages max
+  var baseDpr = Math.min(Math.max(deviceDpr, 1.5), 3); // zoomed-out (1x) crispness
+  var MAX_BASE_PX = 6000000;   // per full-page base bitmap
+  var MAX_TILE_PX = 8000000;   // the single sharp detail tile (~viewport-sized, constant)
+  var MARGIN = 400;
 
   function showMsg(t){ document.getElementById('msg').textContent = t; }
+  function liveZoom(){ return (window.visualViewport && visualViewport.scale) ? visualViewport.scale : 1; }
+  function viewRect(){
+    if (window.visualViewport) return {
+      top: visualViewport.pageTop, left: visualViewport.pageLeft,
+      bottom: visualViewport.pageTop + visualViewport.height,
+      right: visualViewport.pageLeft + visualViewport.width };
+    var t = window.scrollY || 0, l = window.scrollX || 0;
+    return { top: t, left: l, bottom: t + window.innerHeight, right: l + window.innerWidth };
+  }
 
   (async function () {
     var pdf;
-    try {
-      pdf = await pdfjsLib.getDocument({ url: "/pdf/doc.pdf" }).promise;
-    } catch (e) {
-      showMsg("تعذّر عرض الملف: " + (e && e.message ? e.message : e));
-      return;
-    }
+    try { pdf = await pdfjsLib.getDocument({ url: "/pdf/doc.pdf" }).promise; }
+    catch (e) { showMsg("تعذّر عرض الملف: " + (e && e.message ? e.message : e)); return; }
+
     var container = document.getElementById('pages');
     var cssWidth = document.documentElement.clientWidth - 8;
-    var slots = []; // one per page: {div, fit, w, h, rendered}
+    var slots = [];
 
-    // 1) Lay out placeholders at the correct size (no rendering yet) so the
-    //    document scrolls correctly without holding every page's bitmap.
     for (var n = 1; n <= pdf.numPages; n++) {
       var page = await pdf.getPage(n);
       var base = page.getViewport({ scale: 1 });
@@ -57,79 +61,127 @@
       div.style.height = vp.height + 'px';
       div.style.setProperty('--scale-factor', String(fit));
       container.appendChild(div);
-      slots.push({ div: div, num: n, fit: fit, w: vp.width, h: vp.height, rendered: false });
-      page.cleanup(); // release page resources until it's actually shown
+      slots.push({ div: div, num: n, fit: fit, w: vp.width, h: vp.height, rendered: false, rendering: false });
+      page.cleanup();
     }
 
+    // ---- base full-page render (zoomed-out view + text layer for selection) ----
     async function renderSlot(slot) {
-      if (slot.rendered) return;
-      slot.rendered = true;
+      if (slot.rendered || slot.rendering) return;
+      slot.rendering = true;
       try {
         var page = await pdf.getPage(slot.num);
-        var scale = slot.fit * dpr;
-        // Clamp so width*height never exceeds the ceiling.
-        var w = slot.w * dpr, h = slot.h * dpr;
-        if (w * h > MAX_CANVAS_PX) { var k = Math.sqrt(MAX_CANVAS_PX / (w * h)); scale *= k; }
-        var renderVp = page.getViewport({ scale: scale });
+        var scale = slot.fit * baseDpr;
+        var w = slot.w * baseDpr, h = slot.h * baseDpr;
+        if (w * h > MAX_BASE_PX) scale *= Math.sqrt(MAX_BASE_PX / (w * h));
+        var rv = page.getViewport({ scale: scale });
         var canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.floor(renderVp.width));
-        canvas.height = Math.max(1, Math.floor(renderVp.height));
+        canvas.className = 'base';
+        canvas.width = Math.max(1, Math.floor(rv.width));
+        canvas.height = Math.max(1, Math.floor(rv.height));
         canvas.style.width = slot.w + 'px';
         canvas.style.height = slot.h + 'px';
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport: rv }).promise;
+        var tc = await page.getTextContent();
+        var tl = document.createElement('div');
+        tl.className = 'textLayer';
+        tl.style.width = slot.w + 'px'; tl.style.height = slot.h + 'px';
         slot.div.appendChild(canvas);
-        await page.render({ canvasContext: canvas.getContext('2d'), viewport: renderVp }).promise;
-        var textContent = await page.getTextContent();
-        var textLayerDiv = document.createElement('div');
-        textLayerDiv.className = 'textLayer';
-        textLayerDiv.style.width = slot.w + 'px';
-        textLayerDiv.style.height = slot.h + 'px';
-        slot.div.appendChild(textLayerDiv);
-        pdfjsLib.renderTextLayer({
-          textContentSource: textContent,
-          container: textLayerDiv,
-          viewport: page.getViewport({ scale: slot.fit }),
-          textDivs: []
-        });
-        slot.canvas = canvas;
-        slot.page = page;
-      } catch (e) {
-        slot.rendered = false;
-      }
+        slot.div.appendChild(tl);
+        pdfjsLib.renderTextLayer({ textContentSource: tc, container: tl, viewport: page.getViewport({ scale: slot.fit }), textDivs: [] });
+        slot.baseCanvas = canvas; slot.page = page; slot.rendered = true;
+      } catch (e) {}
+      slot.rendering = false;
     }
-
     function freeSlot(slot) {
-      if (!slot.rendered) return;
+      if (!slot.rendered && !slot.rendering) return;
       slot.rendered = false;
-      // Remove the heavy canvas + text layer; keep the sized placeholder.
+      if (slot === detailSlot) clearDetail();
       while (slot.div.firstChild) slot.div.removeChild(slot.div.firstChild);
-      if (slot.canvas) { slot.canvas.width = 0; slot.canvas.height = 0; slot.canvas = null; }
+      if (slot.baseCanvas) { slot.baseCanvas.width = 0; slot.baseCanvas.height = 0; slot.baseCanvas = null; }
       if (slot.page) { try { slot.page.cleanup(); } catch (e) {} slot.page = null; }
     }
-
-    // 2) Render ONLY the pages within a margin of the viewport; free the rest.
-    //    Deterministic windowing keeps memory bounded no matter how many pages
-    //    the document has (a big PDF used to render every page at once → crash).
-    var MARGIN = 1200; // px above/below the viewport to keep rendered
-    function update() {
-      var vpTop = window.scrollY || window.pageYOffset || 0;
-      var vpBot = vpTop + window.innerHeight;
+    function updateWindow() {
+      var vr = viewRect();
       for (var i = 0; i < slots.length; i++) {
         var s = slots[i];
-        var top = s.div.offsetTop;
-        var bot = top + s.h;
-        var near = bot >= (vpTop - MARGIN) && top <= (vpBot + MARGIN);
+        var top = s.div.offsetTop, bot = top + s.h;
+        var near = bot >= (vr.top - MARGIN) && top <= (vr.bottom + MARGIN);
         if (near) renderSlot(s); else freeSlot(s);
       }
     }
-    var ticking = false;
-    function onScroll() {
-      if (ticking) return;
-      ticking = true;
-      window.requestAnimationFrame(function () { ticking = false; update(); });
+
+    // ---- sharp detail tile: only the VISIBLE region of the focused page, at the
+    //      current zoom's true resolution. ~viewport-sized, so memory is constant
+    //      no matter how far you zoom in. This is what keeps text crisp at max zoom.
+    var detailCanvas = null, detailSlot = null, detailBusy = false;
+    function clearDetail() {
+      if (detailCanvas && detailCanvas.parentNode) detailCanvas.parentNode.removeChild(detailCanvas);
+      detailCanvas = null; detailSlot = null;
     }
+    async function updateDetail() {
+      var zoom = liveZoom();
+      if (zoom <= 1.25 || detailBusy) { if (zoom <= 1.25) clearDetail(); return; }
+      var vr = viewRect();
+      var focus = null, best = 0;
+      for (var i = 0; i < slots.length; i++) {
+        var s = slots[i];
+        if (!s.rendered) continue;
+        var pT = s.div.offsetTop, pL = s.div.offsetLeft;
+        var ix = Math.max(0, Math.min(pL + s.w, vr.right) - Math.max(pL, vr.left));
+        var iy = Math.max(0, Math.min(pT + s.h, vr.bottom) - Math.max(pT, vr.top));
+        if (ix * iy > best) { best = ix * iy; focus = { s: s, pT: pT, pL: pL }; }
+      }
+      if (!focus) { clearDetail(); return; }
+      var s = focus.s;
+      var sx = Math.max(0, vr.left - focus.pL), sy = Math.max(0, vr.top - focus.pT);
+      var ex = Math.min(s.w, vr.right - focus.pL), ey = Math.min(s.h, vr.bottom - focus.pT);
+      var subW = ex - sx, subH = ey - sy;
+      if (subW < 4 || subH < 4) { clearDetail(); return; }
+      var effDpr = deviceDpr * zoom;
+      var pxW = subW * effDpr, pxH = subH * effDpr;
+      if (pxW * pxH > MAX_TILE_PX) { var k = Math.sqrt(MAX_TILE_PX / (pxW * pxH)); effDpr *= k; }
+      detailBusy = true;
+      try {
+        var page = await pdf.getPage(s.num);
+        var full = page.getViewport({ scale: s.fit * effDpr });
+        var canvas = document.createElement('canvas');
+        canvas.className = 'detail';
+        canvas.width = Math.max(1, Math.round(subW * effDpr));
+        canvas.height = Math.max(1, Math.round(subH * effDpr));
+        canvas.style.left = sx + 'px'; canvas.style.top = sy + 'px';
+        canvas.style.width = subW + 'px'; canvas.style.height = subH + 'px';
+        await page.render({
+          canvasContext: canvas.getContext('2d'),
+          viewport: full,
+          transform: [1, 0, 0, 1, -sx * effDpr, -sy * effDpr]
+        }).promise;
+        clearDetail();
+        s.div.appendChild(canvas);
+        detailCanvas = canvas; detailSlot = s;
+        page.cleanup();
+      } catch (e) {}
+      detailBusy = false;
+    }
+
+    var winRaf = false;
+    function onScroll() {
+      if (!winRaf) { winRaf = true; requestAnimationFrame(function () { winRaf = false; updateWindow(); }); }
+      scheduleDetail();
+    }
+    var detailTimer = null;
+    function scheduleDetail() {
+      if (detailTimer) clearTimeout(detailTimer);
+      detailTimer = setTimeout(updateDetail, 140);
+    }
+
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onScroll, { passive: true });
-    update();
+    if (window.visualViewport) {
+      visualViewport.addEventListener('scroll', onScroll, { passive: true });
+      visualViewport.addEventListener('resize', onScroll, { passive: true });
+    }
+    updateWindow();
   })();
 </script>
 </body>
