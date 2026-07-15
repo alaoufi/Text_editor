@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=6, user-scalable=yes">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, user-scalable=yes">
 <style>
   html,body{margin:0;padding:0;background:#525659;}
   #pages{display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:10px;}
@@ -23,9 +23,12 @@
 <script src="pdf.min.js"></script>
 <script>
   pdfjsLib.GlobalWorkerOptions.workerSrc = "pdf.worker.min.js";
-  // Cap the render resolution so a big page can't allocate a giant bitmap.
-  var dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-  var MAX_CANVAS_PX = 3000000; // ~12 MB per page bitmap, hard ceiling
+  // Render ABOVE the screen's native pixel density (supersample) so pages are
+  // crisp — and stay crisp when pinch-zoomed. Only the pages near the viewport
+  // are rendered (see windowing below), so the higher resolution is affordable.
+  var deviceDpr = window.devicePixelRatio || 1;
+  var dpr = Math.min(Math.max(deviceDpr, 2) * 1.5, 4.5);
+  var MAX_CANVAS_PX = 12000000; // per-page bitmap ceiling (~48 MB), a few pages max
 
   function showMsg(t){ document.getElementById('msg').textContent = t; }
 
