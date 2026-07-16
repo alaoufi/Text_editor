@@ -51,9 +51,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * A self-contained document scanner that does NOT depend on Google Play services,
@@ -80,7 +85,8 @@ fun ScannerScreen(onDone: (Uri) -> Unit, onCancel: () -> Unit) {
             val bmp = ScanUtil.loadDownscaled(f, 2400)
             if (bmp != null) {
                 captured = bmp
-                corners = ScanUtil.defaultCorners(bmp.width, bmp.height)
+                // Auto-detect the paper's edges; fall back to a safe inset if unsure.
+                corners = ScanUtil.detectDocument(bmp) ?: ScanUtil.defaultCorners(bmp.width, bmp.height)
             }
         } else if (pages.isEmpty()) {
             onCancel() // user backed out of the camera with nothing scanned
@@ -243,6 +249,192 @@ object ScanUtil {
     fun defaultCorners(w: Int, h: Int): FloatArray {
         val ix = w * 0.08f; val iy = h * 0.08f
         return floatArrayOf(ix, iy, w - ix, iy, w - ix, h - iy, ix, h - iy) // TL,TR,BR,BL
+    }
+
+    // ---- Automatic paper-edge detection (no library, works on every device) ----
+    // Pipeline: downscale → grayscale → blur → Sobel edges → Hough line vote →
+    // pick the outer left/right/top/bottom borders → intersect into 4 corners.
+
+    private class Line(val theta: Double, val rho: Double, val votes: Int)
+
+    /**
+     * Detect the four corners of the paper in [src]. Returns TL,TR,BR,BL in *source*
+     * pixels, or null when it isn't confident (caller then falls back to an inset).
+     */
+    fun detectDocument(src: Bitmap): FloatArray? = runCatching {
+        val maxDim = 480
+        val longSide = max(src.width, src.height)
+        val scale = if (longSide > maxDim) longSide.toFloat() / maxDim else 1f
+        val w = max(1, (src.width / scale).roundToInt())
+        val h = max(1, (src.height / scale).roundToInt())
+        val small = Bitmap.createScaledBitmap(src, w, h, true)
+
+        val px = IntArray(w * h)
+        small.getPixels(px, 0, w, 0, 0, w, h)
+        if (small != src) small.recycle()
+
+        // Grayscale (luma).
+        val gray = IntArray(w * h)
+        for (i in px.indices) {
+            val c = px[i]
+            gray[i] = (77 * ((c shr 16) and 0xFF) + 150 * ((c shr 8) and 0xFF) + 29 * (c and 0xFF)) shr 8
+        }
+        val blur = boxBlur(gray, w, h)
+        val mag = sobel(blur, w, h)
+
+        // Keep only the strongest ~12% of edge pixels.
+        val thr = percentile(mag, 0.88f)
+
+        // Hough accumulator over the strong edge pixels.
+        val nTheta = 180
+        val cosT = DoubleArray(nTheta) { cos(Math.PI * it / nTheta) }
+        val sinT = DoubleArray(nTheta) { sin(Math.PI * it / nTheta) }
+        val diag = sqrt((w * w + h * h).toDouble()).toInt() + 1
+        val nRho = 2 * diag + 1
+        val acc = IntArray(nTheta * nRho)
+        var strongCount = 0
+        for (y in 0 until h) {
+            val row = y * w
+            for (x in 0 until w) {
+                if (mag[row + x] < thr) continue
+                strongCount++
+                for (t in 0 until nTheta) {
+                    val r = (x * cosT[t] + y * sinT[t]).roundToInt() + diag
+                    acc[t * nRho + r]++
+                }
+            }
+        }
+        if (strongCount < 200) return null
+
+        // Gather candidate line cells, strongest first.
+        val minVotes = max((0.20 * min(w, h)).toInt(), 24)
+        val cand = ArrayList<IntArray>() // [votes, tIndex, rSigned]
+        for (t in 0 until nTheta) {
+            val base = t * nRho
+            for (r in 1 until nRho - 1) {
+                val v = acc[base + r]
+                if (v < minVotes) continue
+                if (v < acc[base + r - 1] || v < acc[base + r + 1]) continue
+                if (t > 0 && v < acc[base - nRho + r]) continue
+                if (t < nTheta - 1 && v < acc[base + nRho + r]) continue
+                cand.add(intArrayOf(v, t, r - diag))
+            }
+        }
+        if (cand.size < 4) return null
+        cand.sortByDescending { it[0] }
+
+        // Greedy non-maximum suppression so one paper edge = one line.
+        val kept = ArrayList<IntArray>()
+        for (c in cand) {
+            var ok = true
+            for (p in kept) {
+                val dt = min(abs(c[1] - p[1]), nTheta - abs(c[1] - p[1]))
+                if (dt <= 8 && abs(c[2] - p[2]) <= 15) { ok = false; break }
+            }
+            if (ok) kept.add(c)
+        }
+        val lines = kept.map { Line(Math.PI * it[1] / nTheta, it[2].toDouble(), it[0]) }
+
+        // Split into near-vertical (theta≈0/180) and near-horizontal (theta≈90) borders,
+        // each already ordered by vote strength.
+        val deg = Math.PI / 180.0
+        val verticals = lines.filter { it.theta < 35 * deg || it.theta > 145 * deg }
+        val horizontals = lines.filter { it.theta in 55 * deg..125 * deg }
+        if (verticals.size < 2 || horizontals.size < 2) return null
+
+        val cx = w / 2.0; val cy = h / 2.0
+        // x where a vertical line crosses the vertical centre.
+        fun xAt(l: Line): Double = (l.rho - cy * sin(l.theta)) / (cos(l.theta).let { if (abs(it) < 1e-6) 1e-6 else it })
+        // y where a horizontal line crosses the horizontal centre.
+        fun yAt(l: Line): Double = (l.rho - cx * cos(l.theta)) / (sin(l.theta).let { if (abs(it) < 1e-6) 1e-6 else it })
+
+        // The true paper borders are the strongest (longest) lines on each side.
+        val left = verticals.firstOrNull { xAt(it) < cx } ?: return null
+        val right = verticals.firstOrNull { xAt(it) > cx } ?: return null
+        val top = horizontals.firstOrNull { yAt(it) < cy } ?: return null
+        val bottom = horizontals.firstOrNull { yAt(it) > cy } ?: return null
+
+        val tl = intersect(top, left) ?: return null
+        val tr = intersect(top, right) ?: return null
+        val br = intersect(bottom, right) ?: return null
+        val bl = intersect(bottom, left) ?: return null
+        val quad = floatArrayOf(
+            tl[0], tl[1], tr[0], tr[1], br[0], br[1], bl[0], bl[1],
+        )
+
+        // Sanity: corners inside a small margin, quad covers a real area.
+        val marginX = w * 0.06f; val marginY = h * 0.06f
+        for (i in 0 until 4) {
+            if (quad[i * 2] < -marginX || quad[i * 2] > w + marginX) return null
+            if (quad[i * 2 + 1] < -marginY || quad[i * 2 + 1] > h + marginY) return null
+        }
+        if (quadArea(quad) < 0.20 * w * h) return null
+
+        // Map back to source pixels and clamp to bounds.
+        val out = FloatArray(8)
+        for (i in 0 until 4) {
+            out[i * 2] = (quad[i * 2] * scale).coerceIn(0f, src.width.toFloat())
+            out[i * 2 + 1] = (quad[i * 2 + 1] * scale).coerceIn(0f, src.height.toFloat())
+        }
+        out
+    }.getOrNull()
+
+    private fun intersect(a: Line, b: Line): FloatArray? {
+        val det = cos(a.theta) * sin(b.theta) - cos(b.theta) * sin(a.theta)
+        if (abs(det) < 1e-6) return null // parallel
+        val x = (a.rho * sin(b.theta) - b.rho * sin(a.theta)) / det
+        val y = (cos(a.theta) * b.rho - cos(b.theta) * a.rho) / det
+        return floatArrayOf(x.toFloat(), y.toFloat())
+    }
+
+    private fun quadArea(q: FloatArray): Double {
+        var area = 0.0
+        for (i in 0 until 4) {
+            val j = (i + 1) % 4
+            area += q[i * 2].toDouble() * q[j * 2 + 1] - q[j * 2].toDouble() * q[i * 2 + 1]
+        }
+        return abs(area) / 2.0
+    }
+
+    private fun boxBlur(g: IntArray, w: Int, h: Int): IntArray {
+        val out = IntArray(w * h)
+        for (y in 0 until h) for (x in 0 until w) {
+            var sum = 0; var n = 0
+            for (dy in -1..1) for (dx in -1..1) {
+                val ny = y + dy; val nx = x + dx
+                if (nx in 0 until w && ny in 0 until h) { sum += g[ny * w + nx]; n++ }
+            }
+            out[y * w + x] = sum / n
+        }
+        return out
+    }
+
+    private fun sobel(g: IntArray, w: Int, h: Int): IntArray {
+        val out = IntArray(w * h)
+        for (y in 1 until h - 1) for (x in 1 until w - 1) {
+            val tl = g[(y - 1) * w + x - 1]; val tc = g[(y - 1) * w + x]; val tr = g[(y - 1) * w + x + 1]
+            val ml = g[y * w + x - 1]; val mr = g[y * w + x + 1]
+            val bl = g[(y + 1) * w + x - 1]; val bc = g[(y + 1) * w + x]; val br = g[(y + 1) * w + x + 1]
+            val gx = (tr + 2 * mr + br) - (tl + 2 * ml + bl)
+            val gy = (bl + 2 * bc + br) - (tl + 2 * tc + tr)
+            out[y * w + x] = abs(gx) + abs(gy)
+        }
+        return out
+    }
+
+    private fun percentile(v: IntArray, p: Float): Int {
+        var mx = 1
+        for (x in v) if (x > mx) mx = x
+        val bins = 1024
+        val hist = IntArray(bins)
+        for (x in v) hist[(x.toLong() * (bins - 1) / mx).toInt()]++
+        val target = (v.size * p).toInt()
+        var cum = 0
+        for (b in 0 until bins) {
+            cum += hist[b]
+            if (cum >= target) return (b.toLong() * mx / (bins - 1)).toInt()
+        }
+        return mx
     }
 
     fun loadDownscaled(file: File, maxDim: Int): Bitmap? = runCatching {
