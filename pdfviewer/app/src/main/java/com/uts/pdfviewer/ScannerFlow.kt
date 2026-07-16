@@ -16,6 +16,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas as ComposeCanvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -89,6 +91,10 @@ fun ScannerScreen(onDone: (Uri) -> Unit, onCancel: () -> Unit) {
     var cleaned by remember { mutableStateOf(true) }
     var captureFile by remember { mutableStateOf<File?>(null) }
     var busy by remember { mutableStateOf(false) }
+    // Tap-to-mark-corners: tap the paper's four corners in turn; auto-enabled
+    // when auto-detection isn't confident, and available on demand via a button.
+    var tapMode by remember { mutableStateOf(false) }
+    var tapIndex by remember { mutableStateOf(0) }
 
     val takePicture = rememberLauncherForActivityResult(
         ActivityResultContracts.TakePicture()
@@ -98,8 +104,14 @@ fun ScannerScreen(onDone: (Uri) -> Unit, onCancel: () -> Unit) {
             val bmp = ScanUtil.loadDownscaled(f, 2400)
             if (bmp != null) {
                 captured = bmp
-                // Auto-detect the paper's edges; fall back to a safe inset if unsure.
-                corners = ScanUtil.detectDocument(bmp) ?: ScanUtil.defaultCorners(bmp.width, bmp.height)
+                val detected = ScanUtil.detectDocument(bmp)
+                if (detected != null) {
+                    corners = detected; tapMode = false; tapIndex = 0
+                } else {
+                    // Not confident → ask the user to tap the four corners.
+                    corners = ScanUtil.defaultCorners(bmp.width, bmp.height)
+                    tapMode = true; tapIndex = 0
+                }
             }
         } else if (pages.isEmpty()) {
             onCancel() // user backed out of the camera with nothing scanned
@@ -130,8 +142,37 @@ fun ScannerScreen(onDone: (Uri) -> Unit, onCancel: () -> Unit) {
                 bitmap = shot,
                 corners = corners,
                 onCornersChange = { corners = it },
+                tapMode = tapMode,
+                tapIndex = tapIndex,
+                onTapCorner = { bx, by ->
+                    val c = corners.copyOf()
+                    val i = tapIndex.coerceIn(0, 3)
+                    c[i * 2] = bx; c[i * 2 + 1] = by
+                    val next = tapIndex + 1
+                    if (next >= 4) {
+                        // All four placed → order them as TL,TR,BR,BL automatically.
+                        corners = ScanUtil.orderQuad(c)
+                        tapMode = false; tapIndex = 0
+                    } else {
+                        corners = c; tapIndex = next
+                    }
+                },
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
+            // Hint + switch to tap-marking mode.
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    if (tapMode) "انقر على زوايا الورقة الأربع بأي ترتيب (${tapIndex.coerceIn(0, 3) + 1}/4)"
+                    else "اسحب الزوايا لضبطها",
+                    color = ComposeColor.White,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                TextButton(onClick = { tapMode = true; tapIndex = 0 }) { Text("تحديد بالنقر") }
+            }
             Row(
                 Modifier.fillMaxWidth().padding(8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -191,6 +232,9 @@ private fun CornerCropCanvas(
     bitmap: Bitmap,
     corners: FloatArray,
     onCornersChange: (FloatArray) -> Unit,
+    tapMode: Boolean,
+    tapIndex: Int,
+    onTapCorner: (Float, Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val image = remember(bitmap) { bitmap.asImageBitmap() }
@@ -198,27 +242,36 @@ private fun CornerCropCanvas(
     var touch by remember { mutableStateOf(Offset.Zero) }
     val accent = ComposeColor(0xFF00E5FF)
     ComposeCanvas(
-        modifier = modifier.pointerInput(bitmap) {
-            detectDragGestures(
-                onDragStart = { pos ->
-                    touch = pos
+        modifier = modifier.pointerInput(bitmap, tapMode) {
+            if (tapMode) {
+                detectTapGestures { pos ->
                     val m = fitMapping(size.width.toFloat(), size.height.toFloat(), bitmap.width, bitmap.height)
-                    dragging = nearestCorner(corners, pos, m)
-                },
-                onDragEnd = { dragging = -1 },
-                onDrag = { change, _ ->
-                    if (dragging >= 0) {
-                        touch = change.position
+                    val bx = ((pos.x - m.ox) / m.scale).coerceIn(0f, bitmap.width.toFloat())
+                    val by = ((pos.y - m.oy) / m.scale).coerceIn(0f, bitmap.height.toFloat())
+                    onTapCorner(bx, by)
+                }
+            } else {
+                detectDragGestures(
+                    onDragStart = { pos ->
+                        touch = pos
                         val m = fitMapping(size.width.toFloat(), size.height.toFloat(), bitmap.width, bitmap.height)
-                        val bx = ((change.position.x - m.ox) / m.scale).coerceIn(0f, bitmap.width.toFloat())
-                        val by = ((change.position.y - m.oy) / m.scale).coerceIn(0f, bitmap.height.toFloat())
-                        val c = corners.copyOf()
-                        c[dragging * 2] = bx; c[dragging * 2 + 1] = by
-                        onCornersChange(c)
-                    }
-                    change.consume()
-                },
-            )
+                        dragging = nearestCorner(corners, pos, m)
+                    },
+                    onDragEnd = { dragging = -1 },
+                    onDrag = { change, _ ->
+                        if (dragging >= 0) {
+                            touch = change.position
+                            val m = fitMapping(size.width.toFloat(), size.height.toFloat(), bitmap.width, bitmap.height)
+                            val bx = ((change.position.x - m.ox) / m.scale).coerceIn(0f, bitmap.width.toFloat())
+                            val by = ((change.position.y - m.oy) / m.scale).coerceIn(0f, bitmap.height.toFloat())
+                            val c = corners.copyOf()
+                            c[dragging * 2] = bx; c[dragging * 2 + 1] = by
+                            onCornersChange(c)
+                        }
+                        change.consume()
+                    },
+                )
+            }
         },
     ) {
         val m = fitMapping(size.width, size.height, bitmap.width, bitmap.height)
@@ -227,21 +280,30 @@ private fun CornerCropCanvas(
             dstOffset = IntOffset(m.ox.toInt(), m.oy.toInt()),
             dstSize = IntSize((bitmap.width * m.scale).toInt(), (bitmap.height * m.scale).toInt()),
         )
-        // Selection quad: translucent fill + outline.
         val pts = Array(4) { Offset(m.ox + corners[it * 2] * m.scale, m.oy + corners[it * 2 + 1] * m.scale) }
-        val quadPath = Path().apply {
-            moveTo(pts[0].x, pts[0].y)
-            for (i in 1 until 4) lineTo(pts[i].x, pts[i].y)
-            close()
-        }
-        drawPath(quadPath, accent.copy(alpha = 0.12f))
-        for (i in 0 until 4) {
-            drawLine(accent, pts[i], pts[(i + 1) % 4], strokeWidth = 5f)
-        }
-        for (p in pts) {
-            drawCircle(ComposeColor.White, radius = 34f, center = p)
-            drawCircle(accent, radius = 34f, center = p, style = Stroke(6f))
-            drawCircle(accent, radius = 8f, center = p)
+        if (tapMode) {
+            // Show only the corners tapped so far (numbered dots); no quad yet.
+            for (i in 0 until tapIndex.coerceIn(0, 4)) {
+                drawCircle(ComposeColor.White, radius = 28f, center = pts[i])
+                drawCircle(accent, radius = 28f, center = pts[i], style = Stroke(6f))
+                drawCircle(accent, radius = 8f, center = pts[i])
+            }
+        } else {
+            // Selection quad: translucent fill + outline + draggable handles.
+            val quadPath = Path().apply {
+                moveTo(pts[0].x, pts[0].y)
+                for (i in 1 until 4) lineTo(pts[i].x, pts[i].y)
+                close()
+            }
+            drawPath(quadPath, accent.copy(alpha = 0.12f))
+            for (i in 0 until 4) {
+                drawLine(accent, pts[i], pts[(i + 1) % 4], strokeWidth = 5f)
+            }
+            for (p in pts) {
+                drawCircle(ComposeColor.White, radius = 34f, center = p)
+                drawCircle(accent, radius = 34f, center = p, style = Stroke(6f))
+                drawCircle(accent, radius = 8f, center = p)
+            }
         }
 
         // Magnifier: while dragging, show a zoomed loupe of the area under the corner.
@@ -304,6 +366,16 @@ object ScanUtil {
     fun defaultCorners(w: Int, h: Int): FloatArray {
         val ix = w * 0.08f; val iy = h * 0.08f
         return floatArrayOf(ix, iy, w - ix, iy, w - ix, h - iy, ix, h - iy) // TL,TR,BR,BL
+    }
+
+    /** Reorder 4 arbitrary points (x,y ×4) into TL,TR,BR,BL so tap order is free. */
+    fun orderQuad(c: FloatArray): FloatArray {
+        val pts = Array(4) { floatArrayOf(c[it * 2], c[it * 2 + 1]) }
+        val tl = pts.minByOrNull { it[0] + it[1] }!!
+        val br = pts.maxByOrNull { it[0] + it[1] }!!
+        val tr = pts.maxByOrNull { it[0] - it[1] }!!
+        val bl = pts.minByOrNull { it[0] - it[1] }!!
+        return floatArrayOf(tl[0], tl[1], tr[0], tr[1], br[0], br[1], bl[0], bl[1])
     }
 
     private class Line(val theta: Double, val rho: Double, val votes: Int)
