@@ -156,6 +156,11 @@ private fun copyInBackground(context: Context, src: Uri, dest: Uri) {
 
 @Composable
 private fun HomeScreen(onScan: () -> Unit, onOpened: (Uri) -> Unit) {
+    val context = LocalContext.current
+    val version = remember {
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
+            .getOrNull() ?: ""
+    }
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { picked -> if (picked != null) onOpened(picked) }
@@ -165,6 +170,13 @@ private fun HomeScreen(onScan: () -> Unit, onOpened: (Uri) -> Unit) {
             Spacer(Modifier.height(12.dp))
             Button(onClick = onScan) { Text("مسح ضوئي") }
         }
+        // Version shown at the bottom so you can confirm the installed build.
+        Text(
+            "الإصدار $version",
+            modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
