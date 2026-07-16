@@ -1,6 +1,7 @@
 package com.uts.pdfviewer
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -10,16 +11,20 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -33,7 +38,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -45,6 +49,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -52,8 +59,9 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 
 /**
- * A minimal PDF viewer that shows the PDF with pdf.js in a WebView, so the real
- * text layer is selectable and copyable (no OCR). Only Print and Close actions.
+ * A minimal PDF viewer: shows a PDF with pdf.js (selectable text, sharp zoom),
+ * can scan a paper document to a PDF (ML Kit — auto edge-crop + cleanup filters),
+ * print, and close.
  */
 class MainActivity : ComponentActivity() {
 
@@ -63,20 +71,57 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+                    val context = LocalContext.current
                     var uri by remember { mutableStateOf(incoming) }
-                    val picker = rememberLauncherForActivityResult(
-                        ActivityResultContracts.OpenDocument()
-                    ) { picked -> if (picked != null) uri = picked }
+
+                    // --- Document scanner → PDF, then offer to save it ---
+                    var scannedPdf by remember { mutableStateOf<Uri?>(null) }
+                    val saveScan = rememberLauncherForActivityResult(
+                        ActivityResultContracts.CreateDocument("application/pdf")
+                    ) { dest ->
+                        val src = scannedPdf
+                        if (dest != null && src != null) copyInBackground(context, src, dest)
+                        scannedPdf = null
+                    }
+                    val scanLauncher = rememberLauncherForActivityResult(
+                        ActivityResultContracts.StartIntentSenderForResult()
+                    ) { result ->
+                        if (result.resultCode == Activity.RESULT_OK) {
+                            val pdf = GmsDocumentScanningResult
+                                .fromActivityResultIntent(result.data)?.pdf?.uri
+                            if (pdf != null) {
+                                scannedPdf = pdf
+                                uri = pdf                 // show the scan straight away
+                                saveScan.launch("scan.pdf") // and offer to save it
+                            }
+                        }
+                    }
+                    val onScan: () -> Unit = {
+                        val options = GmsDocumentScannerOptions.Builder()
+                            .setGalleryImportAllowed(true)
+                            .setPageLimit(30)
+                            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_PDF)
+                            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+                            .build()
+                        GmsDocumentScanning.getClient(options)
+                            .getStartScanIntent(context as Activity)
+                            .addOnSuccessListener { sender ->
+                                scanLauncher.launch(IntentSenderRequest.Builder(sender).build())
+                            }
+                            .addOnFailureListener {
+                                Toast.makeText(
+                                    context,
+                                    "الماسح الضوئي غير متاح على هذا الجهاز (يتطلب خدمات Google).",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                    }
 
                     val current = uri
                     if (current == null) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Button(onClick = { picker.launch(arrayOf("application/pdf")) }) {
-                                Text("افتح ملف PDF")
-                            }
-                        }
+                        HomeScreen(onScan = onScan, onOpened = { uri = it })
                     } else {
-                        PdfScreen(uri = current, onClose = { finish() })
+                        PdfScreen(uri = current, onScan = onScan, onClose = { finish() })
                     }
                 }
             }
@@ -88,19 +133,36 @@ class MainActivity : ComponentActivity() {
         Intent.ACTION_SEND -> intent.getParcelableExtra(Intent.EXTRA_STREAM)
         else -> null
     }
+}
 
-    override fun onDestroy() {
-        super.onDestroy()
-        // Deep cleanup: remove the temporary copy of the PDF so nothing lingers.
-        runCatching { File(cacheDir, "pdfview").deleteRecursively() }
+private fun copyInBackground(context: Context, src: Uri, dest: Uri) {
+    Thread {
+        runCatching {
+            context.contentResolver.openInputStream(src)?.use { input ->
+                context.contentResolver.openOutputStream(dest)?.use { output -> input.copyTo(output) }
+            }
+        }
+    }.start()
+}
+
+@Composable
+private fun HomeScreen(onScan: () -> Unit, onOpened: (Uri) -> Unit) {
+    val picker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { picked -> if (picked != null) onOpened(picked) }
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Button(onClick = { picker.launch(arrayOf("application/pdf")) }) { Text("افتح ملف PDF") }
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = onScan) { Text("مسح ضوئي") }
+        }
     }
 }
 
 @Composable
-private fun PdfScreen(uri: Uri, onClose: () -> Unit) {
+private fun PdfScreen(uri: Uri, onScan: () -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
 
-    // Copy the PDF to a private cache file once, off the main thread.
     val cacheFile by produceState<File?>(initialValue = null, uri) {
         value = withContext(Dispatchers.IO) {
             runCatching {
@@ -121,10 +183,13 @@ private fun PdfScreen(uri: Uri, onClose: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                TextButton(onClick = {
-                    val pm = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
-                    pm.print("PDF", PdfPrintAdapter(context, uri, "PDF"), null)
-                }) { Text("طباعة") }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onScan) { Text("مسح ضوئي") }
+                    TextButton(onClick = {
+                        val pm = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
+                        pm.print("PDF", PdfPrintAdapter(context, uri, "PDF"), null)
+                    }) { Text("طباعة") }
+                }
                 IconButton(onClick = onClose, modifier = Modifier.size(44.dp)) {
                     Icon(Icons.Filled.Close, contentDescription = "إغلاق", modifier = Modifier.size(24.dp))
                 }
@@ -138,19 +203,14 @@ private fun PdfScreen(uri: Uri, onClose: () -> Unit) {
             PdfWebView(file, Modifier.fillMaxSize())
         }
     }
-
-    // When the viewer leaves the screen, delete the temporary PDF copy.
-    DisposableEffect(uri) {
-        onDispose { runCatching { File(context.cacheDir, "pdfview").deleteRecursively() } }
-    }
 }
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 private fun PdfWebView(pdfFile: File, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
     AndroidView(
         modifier = modifier,
+        onRelease = { web -> web.stopLoading(); web.loadUrl("about:blank"); web.destroy() },
         factory = { ctx ->
             val assetLoader = WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(ctx))
@@ -176,16 +236,6 @@ private fun PdfWebView(pdfFile: File, modifier: Modifier = Modifier) {
                     ): WebResourceResponse? = assetLoader.shouldInterceptRequest(request.url)
                 }
                 loadUrl("https://appassets.androidplatform.net/assets/pdfjs/viewer.html")
-            }
-        },
-        onRelease = { webView ->
-            // Tear the WebView down so pdf.js and its page bitmaps are freed.
-            runCatching {
-                webView.stopLoading()
-                webView.loadUrl("about:blank")
-                webView.clearHistory()
-                webView.removeAllViews()
-                webView.destroy()
             }
         },
     )

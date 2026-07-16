@@ -12,8 +12,8 @@ android {
         applicationId = "com.uts.pdfviewer"
         minSdk = 26
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.7"
+        versionCode = 9
+        versionName = "1.8"
         vectorDrawables { useSupportLibrary = true }
         resourceConfigurations += listOf("en", "ar")
     }
@@ -58,6 +58,9 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.2")
     // Serves the bundled pdf.js assets + the opened PDF to the WebView locally.
     implementation("androidx.webkit:webkit:1.11.0")
+    // Document scanner (camera capture, auto edge-crop, cleanup filters → PDF).
+    // Delivered at runtime by Google Play services, so it adds little to the APK.
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.material3:material3")
