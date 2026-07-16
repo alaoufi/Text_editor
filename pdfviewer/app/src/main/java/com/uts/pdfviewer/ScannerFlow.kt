@@ -51,6 +51,15 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.exifinterface.media.ExifInterface
+import org.opencv.android.OpenCVLoader
+import org.opencv.android.Utils
+import org.opencv.core.Mat
+import org.opencv.core.MatOfInt
+import org.opencv.core.MatOfPoint
+import org.opencv.core.MatOfPoint2f
+import org.opencv.core.Point as CvPoint
+import org.opencv.core.Size as CvSize
+import org.opencv.imgproc.Imgproc
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -297,17 +306,161 @@ object ScanUtil {
         return floatArrayOf(ix, iy, w - ix, iy, w - ix, h - iy, ix, h - iy) // TL,TR,BR,BL
     }
 
-    // ---- Automatic paper-edge detection (no library, works on every device) ----
-    // Pipeline: downscale → grayscale → blur → Sobel edges → Hough line vote →
-    // pick the outer left/right/top/bottom borders → intersect into 4 corners.
-
     private class Line(val theta: Double, val rho: Double, val votes: Int)
 
     /**
-     * Detect the four corners of the paper in [src]. Returns TL,TR,BR,BL in *source*
-     * pixels, or null when it isn't confident (caller then falls back to an inset).
+     * Detect the paper's four corners. Tries the OpenCV contour detector first
+     * (professional accuracy, works offline on every device); if it isn't
+     * confident, falls back to the lightweight Hough detector. Returns TL,TR,BR,BL
+     * in *source* pixels, or null (caller then uses an adjustable inset frame).
      */
-    fun detectDocument(src: Bitmap): FloatArray? = runCatching {
+    fun detectDocument(src: Bitmap): FloatArray? =
+        detectWithOpenCv(src) ?: detectDocumentHough(src)
+
+    // ---- OpenCV detector: Canny edges → largest convex 4-point contour ----
+
+    @Volatile private var cvReady: Boolean? = null
+    private fun ensureCv(): Boolean {
+        cvReady?.let { return it }
+        val ok = runCatching { OpenCVLoader.initLocal() }.getOrDefault(false)
+        cvReady = ok
+        return ok
+    }
+
+    private fun detectWithOpenCv(src: Bitmap): FloatArray? = runCatching {
+        if (!ensureCv()) return null
+        val maxDim = 900
+        val longSide = max(src.width, src.height)
+        val scale = if (longSide > maxDim) longSide.toFloat() / maxDim else 1f
+        val w = max(1, (src.width / scale).roundToInt())
+        val h = max(1, (src.height / scale).roundToInt())
+        val small = Bitmap.createScaledBitmap(src, w, h, true)
+
+        val rgba = Mat()
+        Utils.bitmapToMat(small, rgba)
+        if (small != src) small.recycle()
+        val gray = Mat()
+        Imgproc.cvtColor(rgba, gray, Imgproc.COLOR_RGBA2GRAY)
+        // Smooth texture while keeping strong page edges.
+        val grayF = Mat()
+        Imgproc.bilateralFilter(gray, grayF, 9, 40.0, 40.0)
+
+        val imgArea = (w * h).toDouble()
+        var best: Array<CvPoint>? = null
+        var bestScore = 0.0
+        // Ensemble of edge/threshold masks — robust across lighting & busy backgrounds.
+        for (mask in buildMasks(grayF)) {
+            val contours = ArrayList<MatOfPoint>()
+            Imgproc.findContours(mask, contours, Mat(), Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE)
+            for (c in contours.sortedByDescending { Imgproc.contourArea(it) }.take(8)) {
+                val r = quadFromContour(c, imgArea) ?: continue
+                if (r.second > bestScore) { bestScore = r.second; best = r.first }
+            }
+            mask.release()
+        }
+        rgba.release(); gray.release(); grayF.release()
+
+        val quad = best ?: return null
+        val ordered = orderCorners(quad) // TL,TR,BR,BL in small-image pixels
+        FloatArray(8) { i ->
+            val bound = if (i % 2 == 0) src.width else src.height
+            (ordered[i] * scale).coerceIn(0f, bound.toFloat())
+        }
+    }.getOrNull()
+
+    /** Candidate quad from one contour + its score (area × rectangularity²), or null. */
+    private fun quadFromContour(c: MatOfPoint, imgArea: Double): Pair<Array<CvPoint>, Double>? {
+        val area = Imgproc.contourArea(c)
+        if (area < 0.15 * imgArea || area > 0.985 * imgArea) return null
+        // Convex hull cleans up texture-induced dents before fitting a quad.
+        val hullIdx = MatOfInt()
+        Imgproc.convexHull(c, hullIdx)
+        val cpts = c.toArray()
+        val hullPts = hullIdx.toArray().map { cpts[it] }.toTypedArray()
+        val hull2f = MatOfPoint2f(*hullPts)
+        val peri = Imgproc.arcLength(hull2f, true)
+        var cand: Array<CvPoint>? = null
+        for (eps in doubleArrayOf(0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.10)) {
+            val approx = MatOfPoint2f()
+            Imgproc.approxPolyDP(hull2f, approx, eps * peri, true)
+            if (approx.total() == 4L) { cand = approx.toArray(); approx.release(); break }
+            approx.release()
+        }
+        if (cand == null) {
+            val rr = Imgproc.minAreaRect(hull2f)
+            val boxMat = Mat()
+            Imgproc.boxPoints(rr, boxMat)
+            cand = Array(4) { CvPoint(boxMat.get(it, 0)[0], boxMat.get(it, 1)[0]) }
+            boxMat.release()
+        }
+        hullIdx.release(); hull2f.release()
+        val candMat = MatOfPoint2f(*cand)
+        if (!Imgproc.isContourConvex(MatOfPoint(*cand))) { candMat.release(); return null }
+        val qa = Imgproc.contourArea(candMat)
+        val boxArea = Imgproc.minAreaRect(candMat).size.area()
+        candMat.release()
+        if (qa < 0.15 * imgArea) return null
+        val rect = qa / max(1.0, boxArea)
+        if (rect < 0.82) return null
+        return Pair(cand, qa * rect * rect)
+    }
+
+    /** Three complementary binary masks: median-Canny, fixed-Canny, Otsu. */
+    private fun buildMasks(gray: Mat): List<Mat> {
+        val out = ArrayList<Mat>()
+        val med = medianOf(gray)
+        val e1 = Mat()
+        Imgproc.Canny(gray, e1, max(0.0, 0.66 * med), min(255.0, 1.33 * med))
+        out.add(closeMask(e1, 5, 2)); e1.release()
+        val e2 = Mat()
+        Imgproc.Canny(gray, e2, 50.0, 150.0)
+        out.add(closeMask(e2, 5, 2)); e2.release()
+        val th = Mat()
+        Imgproc.threshold(gray, th, 0.0, 255.0, Imgproc.THRESH_BINARY or Imgproc.THRESH_OTSU)
+        out.add(closeMask(th, 7, 2)); th.release()
+        return out
+    }
+
+    private fun closeMask(m: Mat, k: Int, iterations: Int): Mat {
+        val dst = Mat()
+        Imgproc.morphologyEx(
+            m, dst, Imgproc.MORPH_CLOSE,
+            Imgproc.getStructuringElement(Imgproc.MORPH_RECT, CvSize(k.toDouble(), k.toDouble())),
+            CvPoint(-1.0, -1.0), iterations,
+        )
+        return dst
+    }
+
+    private fun medianOf(gray: Mat): Double {
+        val n = gray.total().toInt()
+        if (n == 0) return 128.0
+        val buf = ByteArray(n)
+        gray.get(0, 0, buf)
+        val hist = IntArray(256)
+        for (b in buf) hist[b.toInt() and 0xFF]++
+        var cum = 0
+        val half = n / 2
+        for (i in 0..255) { cum += hist[i]; if (cum >= half) return i.toDouble() }
+        return 128.0
+    }
+
+    /** Order 4 unordered points as TL,TR,BR,BL (x+y and x−y extremes). */
+    private fun orderCorners(p: Array<CvPoint>): FloatArray {
+        val tl = p.minByOrNull { it.x + it.y }!!
+        val br = p.maxByOrNull { it.x + it.y }!!
+        val tr = p.maxByOrNull { it.x - it.y }!!
+        val bl = p.minByOrNull { it.x - it.y }!!
+        return floatArrayOf(
+            tl.x.toFloat(), tl.y.toFloat(), tr.x.toFloat(), tr.y.toFloat(),
+            br.x.toFloat(), br.y.toFloat(), bl.x.toFloat(), bl.y.toFloat(),
+        )
+    }
+
+    // ---- Fallback Hough detector (no library) ----
+    // Pipeline: downscale → grayscale → blur → Sobel edges → Hough line vote →
+    // pick the outer left/right/top/bottom borders → intersect into 4 corners.
+
+    private fun detectDocumentHough(src: Bitmap): FloatArray? = runCatching {
         val maxDim = 480
         val longSide = max(src.width, src.height)
         val scale = if (longSide > maxDim) longSide.toFloat() / maxDim else 1f

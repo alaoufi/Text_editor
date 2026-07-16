@@ -12,10 +12,13 @@ android {
         applicationId = "com.uts.pdfviewer"
         minSdk = 26
         targetSdk = 34
-        versionCode = 13
-        versionName = "2.2"
+        versionCode = 14
+        versionName = "2.3"
         vectorDrawables { useSupportLibrary = true }
         resourceConfigurations += listOf("en", "ar")
+        // OpenCV ships native libs per ABI. Package the two ABIs used by virtually
+        // every Android phone to keep the APK size in check.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
     signingConfigs {
@@ -64,6 +67,9 @@ dependencies {
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
     // Reads photo EXIF orientation for the built-in scanner.
     implementation("androidx.exifinterface:exifinterface:1.3.7")
+    // Professional computer-vision engine — high-accuracy paper-edge detection
+    // fully offline (no Google Play services), so it works on every device.
+    implementation("org.opencv:opencv:4.11.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.material3:material3")
