@@ -38,8 +38,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color as ComposeColor
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntOffset
@@ -182,16 +185,20 @@ private fun CornerCropCanvas(
 ) {
     val image = remember(bitmap) { bitmap.asImageBitmap() }
     var dragging by remember { mutableStateOf(-1) }
+    var touch by remember { mutableStateOf(Offset.Zero) }
+    val accent = ComposeColor(0xFF00E5FF)
     ComposeCanvas(
         modifier = modifier.pointerInput(bitmap) {
             detectDragGestures(
                 onDragStart = { pos ->
+                    touch = pos
                     val m = fitMapping(size.width.toFloat(), size.height.toFloat(), bitmap.width, bitmap.height)
                     dragging = nearestCorner(corners, pos, m)
                 },
                 onDragEnd = { dragging = -1 },
                 onDrag = { change, _ ->
                     if (dragging >= 0) {
+                        touch = change.position
                         val m = fitMapping(size.width.toFloat(), size.height.toFloat(), bitmap.width, bitmap.height)
                         val bx = ((change.position.x - m.ox) / m.scale).coerceIn(0f, bitmap.width.toFloat())
                         val by = ((change.position.y - m.oy) / m.scale).coerceIn(0f, bitmap.height.toFloat())
@@ -210,14 +217,52 @@ private fun CornerCropCanvas(
             dstOffset = IntOffset(m.ox.toInt(), m.oy.toInt()),
             dstSize = IntSize((bitmap.width * m.scale).toInt(), (bitmap.height * m.scale).toInt()),
         )
-        // quad outline
+        // Selection quad: translucent fill + outline.
         val pts = Array(4) { Offset(m.ox + corners[it * 2] * m.scale, m.oy + corners[it * 2 + 1] * m.scale) }
+        val quadPath = Path().apply {
+            moveTo(pts[0].x, pts[0].y)
+            for (i in 1 until 4) lineTo(pts[i].x, pts[i].y)
+            close()
+        }
+        drawPath(quadPath, accent.copy(alpha = 0.12f))
         for (i in 0 until 4) {
-            drawLine(ComposeColor(0xFF00E5FF), pts[i], pts[(i + 1) % 4], strokeWidth = 3f)
+            drawLine(accent, pts[i], pts[(i + 1) % 4], strokeWidth = 5f)
         }
         for (p in pts) {
-            drawCircle(ComposeColor(0xFF00E5FF), radius = 22f, center = p)
-            drawCircle(ComposeColor.White, radius = 9f, center = p)
+            drawCircle(ComposeColor.White, radius = 34f, center = p)
+            drawCircle(accent, radius = 34f, center = p, style = Stroke(6f))
+            drawCircle(accent, radius = 8f, center = p)
+        }
+
+        // Magnifier: while dragging, show a zoomed loupe of the area under the corner.
+        if (dragging in 0 until 4) {
+            val cxImg = corners[dragging * 2]
+            val cyImg = corners[dragging * 2 + 1]
+            val magR = 150f
+            val zoom = 2.6f
+            val srcHalf = magR / zoom
+            val sx = (cxImg - srcHalf).coerceIn(0f, (bitmap.width - 2 * srcHalf).coerceAtLeast(0f))
+            val sy = (cyImg - srcHalf).coerceIn(0f, (bitmap.height - 2 * srcHalf).coerceAtLeast(0f))
+            // Keep the loupe on the side away from the finger.
+            val onLeft = touch.x < size.width / 2f
+            val mcx = if (onLeft) size.width - magR - 28f else magR + 28f
+            val mcy = magR + 28f
+            val ring = Path().apply { addOval(Rect(mcx - magR, mcy - magR, mcx + magR, mcy + magR)) }
+            clipPath(ring) {
+                drawImage(
+                    image = image,
+                    srcOffset = IntOffset(sx.toInt(), sy.toInt()),
+                    srcSize = IntSize((2 * srcHalf).toInt().coerceAtLeast(1), (2 * srcHalf).toInt().coerceAtLeast(1)),
+                    dstOffset = IntOffset((mcx - magR).toInt(), (mcy - magR).toInt()),
+                    dstSize = IntSize((2 * magR).toInt(), (2 * magR).toInt()),
+                )
+            }
+            // Crosshair at the exact corner position inside the loupe.
+            val chx = mcx + (cxImg - (sx + srcHalf)) * zoom
+            val chy = mcy + (cyImg - (sy + srcHalf)) * zoom
+            drawLine(accent, Offset(chx - 26f, chy), Offset(chx + 26f, chy), strokeWidth = 3f)
+            drawLine(accent, Offset(chx, chy - 26f), Offset(chx, chy + 26f), strokeWidth = 3f)
+            drawCircle(ComposeColor.White, radius = magR, center = Offset(mcx, mcy), style = Stroke(6f))
         }
     }
 }
@@ -354,6 +399,12 @@ object ScanUtil {
         val top = horizontals.firstOrNull { yAt(it) < cy } ?: return null
         val bottom = horizontals.firstOrNull { yAt(it) > cy } ?: return null
 
+        // Only trust detection when the paper fills most of the frame — the normal
+        // scanning case. This avoids latching onto an inner fold/shadow/text line
+        // and cropping to half the page; if unsure we return null (manual fallback).
+        if (xAt(left) > 0.32 * w || xAt(right) < 0.68 * w) return null
+        if (yAt(top) > 0.32 * h || yAt(bottom) < 0.68 * h) return null
+
         val tl = intersect(top, left) ?: return null
         val tr = intersect(top, right) ?: return null
         val br = intersect(bottom, right) ?: return null
@@ -362,13 +413,13 @@ object ScanUtil {
             tl[0], tl[1], tr[0], tr[1], br[0], br[1], bl[0], bl[1],
         )
 
-        // Sanity: corners inside a small margin, quad covers a real area.
+        // Sanity: corners inside a small margin, quad covers most of the frame.
         val marginX = w * 0.06f; val marginY = h * 0.06f
         for (i in 0 until 4) {
             if (quad[i * 2] < -marginX || quad[i * 2] > w + marginX) return null
             if (quad[i * 2 + 1] < -marginY || quad[i * 2 + 1] > h + marginY) return null
         }
-        if (quadArea(quad) < 0.20 * w * h) return null
+        if (quadArea(quad) < 0.45 * w * h) return null
 
         // Map back to source pixels and clamp to bounds.
         val out = FloatArray(8)
