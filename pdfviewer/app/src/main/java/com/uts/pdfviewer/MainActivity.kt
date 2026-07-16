@@ -11,7 +11,6 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -42,7 +41,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -72,7 +73,9 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
                     val context = LocalContext.current
+                    val scope = rememberCoroutineScope()
                     var uri by remember { mutableStateOf(incoming) }
+                    var showScanner by remember { mutableStateOf(false) }
 
                     // --- Document scanner → PDF, then offer to save it ---
                     var scannedPdf by remember { mutableStateOf<Uri?>(null) }
@@ -109,19 +112,25 @@ class MainActivity : ComponentActivity() {
                                 scanLauncher.launch(IntentSenderRequest.Builder(sender).build())
                             }
                             .addOnFailureListener {
-                                Toast.makeText(
-                                    context,
-                                    "الماسح الضوئي غير متاح على هذا الجهاز (يتطلب خدمات Google).",
-                                    Toast.LENGTH_LONG,
-                                ).show()
+                                // No Google scanner on this device → use the built-in one.
+                                showScanner = true
                             }
                     }
 
                     val current = uri
-                    if (current == null) {
-                        HomeScreen(onScan = onScan, onOpened = { uri = it })
-                    } else {
-                        PdfScreen(uri = current, onScan = onScan, onClose = { finish() })
+                    when {
+                        showScanner -> ScannerScreen(
+                            onDone = { dest ->
+                                scope.launch {
+                                    ScanUtil.exportTo(context, dest)
+                                    showScanner = false
+                                    uri = dest
+                                }
+                            },
+                            onCancel = { showScanner = false },
+                        )
+                        current == null -> HomeScreen(onScan = onScan, onOpened = { uri = it })
+                        else -> PdfScreen(uri = current, onScan = onScan, onClose = { finish() })
                     }
                 }
             }
