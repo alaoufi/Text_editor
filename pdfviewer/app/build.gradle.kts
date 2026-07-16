@@ -12,13 +12,14 @@ android {
         applicationId = "com.uts.pdfviewer"
         minSdk = 26
         targetSdk = 34
-        versionCode = 14
-        versionName = "2.3"
+        versionCode = 15
+        versionName = "2.4"
         vectorDrawables { useSupportLibrary = true }
         resourceConfigurations += listOf("en", "ar")
-        // OpenCV ships native libs per ABI. Package the two ABIs used by virtually
-        // every Android phone to keep the APK size in check.
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+        // OpenCV ships native libs per ABI. Ship arm64-v8a only — it covers every
+        // modern (2017+) Android phone and roughly halves the APK size. (A build
+        // with armeabi-v7a for old 32-bit devices is kept at the v2.3 release.)
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     signingConfigs {
