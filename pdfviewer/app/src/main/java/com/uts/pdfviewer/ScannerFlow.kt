@@ -13,7 +13,7 @@ import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Canvas as ComposeCanvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -177,7 +177,7 @@ private fun CornerCropCanvas(
 ) {
     val image = remember(bitmap) { bitmap.asImageBitmap() }
     var dragging by remember { mutableStateOf(-1) }
-    Canvas(
+    ComposeCanvas(
         modifier = modifier.pointerInput(bitmap) {
             detectDragGestures(
                 onDragStart = { pos ->
