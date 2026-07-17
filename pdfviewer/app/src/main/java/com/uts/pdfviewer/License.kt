@@ -22,7 +22,7 @@ object License {
     /* ==================== EDIT: your key + prefix ====================
      * Paste the PUBLIC key (base64) printed by `node keygen.mjs new`.
      * While it starts with REPLACE_, protection is OFF (app runs free). */
-    private const val PUBLIC_KEY = "REPLACE_WITH_YOUR_PUBLIC_KEY_BASE64"
+    private const val PUBLIC_KEY = "HTjMJjY5w78puPyvCk4562hZdQoMsNpwutm2UY6IQcM="
     private const val PREFIX = "UNIV1"
     /* ================================================================ */
 
