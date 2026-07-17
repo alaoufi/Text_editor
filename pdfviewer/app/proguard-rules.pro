@@ -4,3 +4,7 @@
 -keep class org.opencv.** { *; }
 -keepclasseswithmembernames class * { native <methods>; }
 -dontwarn org.opencv.**
+
+# Ed25519 (eddsa) — used for offline activation verification.
+-keep class net.i2p.crypto.** { *; }
+-dontwarn net.i2p.crypto.**

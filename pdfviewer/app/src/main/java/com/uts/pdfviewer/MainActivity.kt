@@ -16,6 +16,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +35,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -47,6 +51,9 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
@@ -74,6 +81,18 @@ class MainActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
                     val context = LocalContext.current
                     val scope = rememberCoroutineScope()
+
+                    // --- Activation gate: cover the app until it's activated ---
+                    var licensed by remember {
+                        mutableStateOf(License.state(context).let {
+                            it == License.State.ACTIVE || it == License.State.DISABLED
+                        })
+                    }
+                    if (!licensed) {
+                        ActivationScreen(onActivated = { licensed = true })
+                        return@Surface
+                    }
+
                     var uri by remember { mutableStateOf(incoming) }
                     var showScanner by remember { mutableStateOf(false) }
 
@@ -152,6 +171,86 @@ private fun copyInBackground(context: Context, src: Uri, dest: Uri) {
             }
         }
     }.start()
+}
+
+@Composable
+private fun ActivationScreen(onActivated: () -> Unit) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val device = remember { License.deviceIdPretty(context) }
+    var code by remember { mutableStateOf("") }
+    var seed by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf("") }
+    var isError by remember { mutableStateOf(false) }
+    var showOwner by remember { mutableStateOf(false) }
+
+    Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+        ) {
+            Text("🔐", style = MaterialTheme.typography.displaySmall)
+            Spacer(Modifier.height(4.dp))
+            Text("تفعيل التطبيق", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "أرسل «رقم الجهاز» للمطوّر ليصلك رمز التفعيل (يعمل بدون إنترنت).",
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(18.dp))
+            Text("رقم الجهاز", style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(device, style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = {
+                clipboard.setText(AnnotatedString(License.deviceId(context)))
+                isError = false; message = "نُسخ رقم الجهاز ✓"
+            }) { Text("📋 نسخ رقم الجهاز") }
+            Spacer(Modifier.height(18.dp))
+            OutlinedTextField(
+                value = code, onValueChange = { code = it },
+                label = { Text("أدخل رمز التفعيل") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick = {
+                    if (License.tryActivate(context, code)) onActivated()
+                    else { isError = true; message = "رمز غير صالح لهذا الجهاز." }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("تفعيل") }
+            if (message.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    message,
+                    color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                )
+            }
+            Spacer(Modifier.height(20.dp))
+            TextButton(onClick = { showOwner = !showOwner }) {
+                Text("استرجاع المالك (بذرة سرّية)", style = MaterialTheme.typography.bodySmall)
+            }
+            if (showOwner) {
+                OutlinedTextField(
+                    value = seed, onValueChange = { seed = it },
+                    label = { Text("البذرة السرّية (64 hex)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        if (License.recoverWithSeed(context, seed)) onActivated()
+                        else { isError = true; message = "بذرة غير مطابقة." }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("تفعيل بالبذرة") }
+            }
+        }
+    }
 }
 
 @Composable

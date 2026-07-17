@@ -71,6 +71,8 @@ dependencies {
     // Professional computer-vision engine — high-accuracy paper-edge detection
     // fully offline (no Google Play services), so it works on every device.
     implementation("org.opencv:opencv:4.11.0")
+    // Ed25519 verification for the offline activation/keygen protection.
+    implementation("net.i2p.crypto:eddsa:0.3.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.material3:material3")
