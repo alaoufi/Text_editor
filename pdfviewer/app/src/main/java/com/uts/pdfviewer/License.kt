@@ -1,6 +1,7 @@
 package com.uts.pdfviewer
 
 import android.content.Context
+import android.provider.Settings
 import android.util.Base64
 import net.i2p.crypto.eddsa.EdDSAEngine
 import net.i2p.crypto.eddsa.EdDSAPublicKey
@@ -8,7 +9,6 @@ import net.i2p.crypto.eddsa.spec.EdDSANamedCurveTable
 import net.i2p.crypto.eddsa.spec.EdDSAPrivateKeySpec
 import net.i2p.crypto.eddsa.spec.EdDSAPublicKeySpec
 import java.security.MessageDigest
-import java.security.SecureRandom
 
 /**
  * Offline activation / keygen protection — a faithful port of the app-activation-kit
@@ -22,13 +22,13 @@ object License {
     /* ==================== EDIT: your key + prefix ====================
      * Paste the PUBLIC key (base64) printed by `node keygen.mjs new`.
      * While it starts with REPLACE_, protection is OFF (app runs free). */
-    private const val PUBLIC_KEY = "ucd/BzIBLoU2ol9GVwYeEjoTb7SsbfOgPtNwYls0rI0="
-    private const val PREFIX = "UNIV1"
+    private const val PUBLIC_KEY = "W5Kc9hRB7lb9xSh/VqdR4T8GT6VaDznEwYQgXZpLZz0="
+    private const val PREFIX = "UNI3"
+    private const val SALT = "alaoufi:"
     /* ================================================================ */
 
     private const val B32 = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     private const val PREFS = "guard"
-    private const val K_DEV = "guard_device"
     private const val K_D = "lic_d"
     private const val K_A = "lic_a"
     private const val K_S = "lic_s"
@@ -65,19 +65,17 @@ object License {
 
     private fun norm(s: String): String = s.uppercase().replace(Regex("[^A-Z0-9]"), "")
 
-    // ---- Device number: random per-install, 16-char Base32 (kit behaviour) ----
+    // ---- Device number: UNI3 standard — deterministic from hardware, so every
+    // app on the same device shows the SAME number (one code unlocks them all):
+    //   deviceId = Base32( SHA-256("alaoufi:" + ANDROID_ID)[0..10] )  → 16 chars.
     fun deviceId(c: Context): String {
-        val p = prefs(c)
-        var r = p.getString(K_DEV, null)
-        if (r == null || r.length < 16) {
-            val b = ByteArray(10); SecureRandom().nextBytes(b); r = b32e(b)
-            p.edit().putString(K_DEV, r).apply()
-        }
-        return r
+        val androidId = Settings.Secure.getString(c.contentResolver, Settings.Secure.ANDROID_ID) ?: ""
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest((SALT + androidId).toByteArray(Charsets.UTF_8))
+        return b32e(digest.copyOfRange(0, 10))
     }
 
-    fun deviceIdPretty(c: Context): String =
-        deviceId(c).replace(Regex("(.{4})"), "$1-").trimEnd('-')
+    fun deviceIdPretty(c: Context): String = deviceId(c).chunked(4).joinToString("-")
 
     private fun publicKeyBytes(): ByteArray = Base64.decode(PUBLIC_KEY, Base64.DEFAULT)
 
