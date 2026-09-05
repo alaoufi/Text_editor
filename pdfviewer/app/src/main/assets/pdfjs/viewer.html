@@ -42,26 +42,42 @@
   }
 
   (async function () {
-    var pdf;
-    try { pdf = await pdfjsLib.getDocument({ url: "/pdf/doc.pdf" }).promise; }
-    catch (e) { showMsg("تعذّر عرض الملف: " + (e && e.message ? e.message : e)); return; }
+    showMsg("جارٍ تحميل الملف…");
+    var pdf = null, tries = 0;
+    while (pdf === null) {
+      try { pdf = await pdfjsLib.getDocument({ url: "/pdf/doc.pdf" }).promise; }
+      catch (e) {
+        if (++tries >= 3) { showMsg("تعذّر عرض الملف: " + (e && e.message ? e.message : e)); return; }
+        await new Promise(function (r) { setTimeout(r, 400); });
+      }
+    }
+    showMsg("");
 
     var container = document.getElementById('pages');
     var cssWidth = document.documentElement.clientWidth - 8;
     var slots = [];
 
+    // Size (or resize) a page slot to the current cssWidth — used at first layout
+    // and again whenever the window width changes (e.g. rotation).
+    function sizeSlot(s) {
+      s.fit = Math.max(0.2, cssWidth / s.baseW);
+      s.w = s.baseW * s.fit;
+      s.h = s.baseH * s.fit;
+      s.div.style.width = s.w + 'px';
+      s.div.style.height = s.h + 'px';
+      s.div.style.setProperty('--scale-factor', String(s.fit));
+    }
+
     for (var n = 1; n <= pdf.numPages; n++) {
       var page = await pdf.getPage(n);
       var base = page.getViewport({ scale: 1 });
-      var fit = Math.max(0.2, cssWidth / base.width);
-      var vp = page.getViewport({ scale: fit });
       var div = document.createElement('div');
       div.className = 'page';
-      div.style.width = vp.width + 'px';
-      div.style.height = vp.height + 'px';
-      div.style.setProperty('--scale-factor', String(fit));
       container.appendChild(div);
-      slots.push({ div: div, num: n, fit: fit, w: vp.width, h: vp.height, rendered: false, rendering: false });
+      var slot = { div: div, num: n, baseW: base.width, baseH: base.height,
+                   fit: 1, w: 0, h: 0, rendered: false, rendering: false };
+      sizeSlot(slot);
+      slots.push(slot);
       page.cleanup();
     }
 
@@ -175,8 +191,26 @@
       detailTimer = setTimeout(updateDetail, 140);
     }
 
+    // Re-fit all pages when the layout width changes (rotation / split-screen),
+    // so the document stays correctly sized instead of clipped or tiny.
+    function relayout() {
+      var newW = document.documentElement.clientWidth - 8;
+      if (Math.abs(newW - cssWidth) < 2) { onScroll(); return; }
+      cssWidth = newW;
+      clearDetail();
+      for (var i = 0; i < slots.length; i++) { freeSlot(slots[i]); sizeSlot(slots[i]); }
+      updateWindow();
+      scheduleDetail();
+    }
+    var resizeTimer = null;
+    function onResize() {
+      onScroll();
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(relayout, 200);
+    }
+
     window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onScroll, { passive: true });
+    window.addEventListener('resize', onResize, { passive: true });
     if (window.visualViewport) {
       visualViewport.addEventListener('scroll', onScroll, { passive: true });
       visualViewport.addEventListener('resize', onScroll, { passive: true });

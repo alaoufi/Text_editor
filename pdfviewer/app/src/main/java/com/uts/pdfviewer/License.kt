@@ -33,6 +33,8 @@ object License {
     private const val K_A = "lic_a"
     private const val K_S = "lic_s"
     private const val K_HAS = "lic_has"
+    private const val K_CODE = "lic_code"   // stored activation code (re-verified each launch)
+    private const val K_TAG = "lic_tag"     // device-bound integrity tag (tamper/copy evident)
 
     enum class State { DISABLED, NONE, ACTIVE, EXPIRED }
 
@@ -97,17 +99,31 @@ object License {
 
     fun tryActivate(c: Context, code: String): Boolean {
         val d = verify(c, code) ?: return false
-        writeRecord(c, d)
+        writeRecord(c, d, norm(code))
         return true
     }
 
     fun deactivate(c: Context) {
-        prefs(c).edit().remove(K_D).remove(K_A).remove(K_S).remove(K_HAS).apply()
+        prefs(c).edit()
+            .remove(K_D).remove(K_A).remove(K_S).remove(K_HAS).remove(K_CODE).remove(K_TAG)
+            .apply()
     }
 
-    private fun writeRecord(c: Context, days: Int) {
+    private fun sha256Hex(s: String): String =
+        MessageDigest.getInstance("SHA-256").digest(s.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 0xFF) }
+
+    /** Integrity tag: binds the stored record to THIS device. Copying the app's
+     *  data to another phone changes deviceId → tag mismatch → locked. */
+    private fun integrityTag(c: Context, code: String, days: Int, a: Long): String =
+        sha256Hex(deviceId(c) + "|" + code + "|" + days + "|" + a + "|" + PUBLIC_KEY)
+
+    private fun writeRecord(c: Context, days: Int, code: String) {
         val t = System.currentTimeMillis()
-        prefs(c).edit().putInt(K_D, days).putLong(K_A, t).putLong(K_S, t).putBoolean(K_HAS, true).apply()
+        prefs(c).edit()
+            .putInt(K_D, days).putLong(K_A, t).putLong(K_S, t).putBoolean(K_HAS, true)
+            .putString(K_CODE, code).putString(K_TAG, integrityTag(c, code, days, t))
+            .apply()
     }
 
     fun state(c: Context): State {
@@ -117,6 +133,15 @@ object License {
         val d = p.getInt(K_D, 0)
         val a = p.getLong(K_A, 0)
         val s = p.getLong(K_S, 0)
+        val code = p.getString(K_CODE, "") ?: ""
+        val tag = p.getString(K_TAG, "") ?: ""
+
+        // 1) Tamper/copy check: the record must match this device untouched.
+        if (integrityTag(c, code, d, a) != tag) { deactivate(c); return State.NONE }
+        // 2) Cryptographic re-check: a code activation must still verify for THIS
+        //    device (defeats copying activated data to another phone).
+        if (code.isNotEmpty() && verify(c, code) != d) { deactivate(c); return State.NONE }
+
         val now = System.currentTimeMillis()
         val eff = maxOf(now, s)              // clock guard: never rewind
         if (eff != s) p.edit().putLong(K_S, eff).apply()
@@ -132,7 +157,7 @@ object License {
             val seed = ByteArray(32) { h.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
             val spec = EdDSANamedCurveTable.getByName(EdDSANamedCurveTable.ED_25519)
             val derivedPub = EdDSAPrivateKeySpec(seed, spec).a.toByteArray()
-            if (derivedPub.contentEquals(publicKeyBytes())) { writeRecord(c, 0); true } else false
+            if (derivedPub.contentEquals(publicKeyBytes())) { writeRecord(c, 0, ""); true } else false
         } catch (e: Exception) { false }
     }
 }

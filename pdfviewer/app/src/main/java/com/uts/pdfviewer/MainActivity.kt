@@ -18,6 +18,9 @@ import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -184,6 +188,19 @@ private fun ActivationScreen(onActivated: () -> Unit) {
     var isError by remember { mutableStateOf(false) }
     var showOwner by remember { mutableStateOf(false) }
 
+    val activate: () -> Unit = {
+        if (code.isBlank()) { isError = true; message = "الصق رمز التفعيل أولاً." }
+        else if (License.tryActivate(context, code)) onActivated()
+        else { isError = true; message = "رمز غير صالح لهذا الجهاز." }
+    }
+    val shareDevice: () -> Unit = {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, "رقم جهازي لتفعيل التطبيق:\n" + License.deviceId(context))
+        }
+        runCatching { context.startActivity(Intent.createChooser(send, "مشاركة رقم الجهاز")) }
+    }
+
     Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -204,24 +221,31 @@ private fun ActivationScreen(onActivated: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(device, style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = {
-                clipboard.setText(AnnotatedString(License.deviceId(context)))
-                isError = false; message = "نُسخ رقم الجهاز ✓"
-            }) { Text("📋 نسخ رقم الجهاز") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    clipboard.setText(AnnotatedString(License.deviceId(context)))
+                    isError = false; message = "نُسخ رقم الجهاز ✓"
+                }) { Text("📋 نسخ") }
+                OutlinedButton(onClick = shareDevice) { Text("📤 مشاركة") }
+            }
             Spacer(Modifier.height(18.dp))
             OutlinedTextField(
                 value = code, onValueChange = { code = it },
                 label = { Text("أدخل رمز التفعيل") },
+                singleLine = false,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { activate() }),
+                trailingIcon = {
+                    TextButton(onClick = {
+                        val t = clipboard.getText()?.text
+                        if (!t.isNullOrBlank()) { code = t; isError = false; message = "" }
+                        else { isError = true; message = "الحافظة فارغة." }
+                    }) { Text("لصق") }
+                },
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(10.dp))
-            Button(
-                onClick = {
-                    if (License.tryActivate(context, code)) onActivated()
-                    else { isError = true; message = "رمز غير صالح لهذا الجهاز." }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("تفعيل") }
+            Button(onClick = activate, modifier = Modifier.fillMaxWidth()) { Text("تفعيل") }
             if (message.isNotEmpty()) {
                 Spacer(Modifier.height(10.dp))
                 Text(
@@ -320,7 +344,9 @@ private fun PdfScreen(uri: Uri, onScan: () -> Unit, onClose: () -> Unit) {
         if (file == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         } else {
-            PdfWebView(file, Modifier.fillMaxSize())
+            // Key on the document so opening a different PDF rebuilds the WebView
+            // instead of showing the previous one.
+            key(uri) { PdfWebView(file, Modifier.fillMaxSize()) }
         }
     }
 }
