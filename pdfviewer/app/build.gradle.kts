@@ -12,8 +12,8 @@ android {
         applicationId = "com.uts.pdfviewer"
         minSdk = 26
         targetSdk = 34
-        versionCode = 20
-        versionName = "2.9"
+        versionCode = 21
+        versionName = "2.10"
         vectorDrawables { useSupportLibrary = true }
         resourceConfigurations += listOf("en", "ar")
         // OpenCV ships native libs per ABI. Ship arm64-v8a only — it covers every

@@ -1,5 +1,6 @@
 package com.uts.pdfviewer
 
+import com.uts.pdfviewer.update.UpdateGate
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
@@ -83,6 +84,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+                  UpdateGate {
                     val context = LocalContext.current
                     val scope = rememberCoroutineScope()
 
@@ -94,7 +96,7 @@ class MainActivity : ComponentActivity() {
                     }
                     if (!licensed) {
                         ActivationScreen(onActivated = { licensed = true })
-                        return@Surface
+                        return@UpdateGate
                     }
 
                     var uri by remember { mutableStateOf(incoming) }
@@ -155,6 +157,7 @@ class MainActivity : ComponentActivity() {
                         current == null -> HomeScreen(onScan = onScan, onOpened = { uri = it })
                         else -> PdfScreen(uri = current, onScan = onScan, onClose = { finish() })
                     }
+                  }
                 }
             }
         }

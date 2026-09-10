@@ -84,3 +84,30 @@ jobs:
           files: pdfviewer/out/*.apk
           generate_release_notes: true
           fail_on_unmatched_files: true
+
+      # ---- Self-update channel: a permanent "latest" release that the in-app
+      #      updater reads (fixed-name APK + version.json). ----
+      - name: Stage latest channel
+        run: |
+          mkdir -p latest
+          cp app/build/outputs/apk/release/*.apk latest/PdfViewer.apk
+          VN=$(grep -E 'versionName' app/build.gradle.kts | grep -oE '"[0-9.]+"' | tr -d '"' | head -1)
+          VC=$(grep -E 'versionCode' app/build.gradle.kts | grep -oE '[0-9]+' | head -1)
+          cat > latest/version.json <<EOF
+          {
+            "version": "$VN",
+            "build": $VC,
+            "url": "https://github.com/${{ github.repository }}/releases/download/latest/PdfViewer.apk"
+          }
+          EOF
+          cat latest/version.json
+
+      - name: Publish/refresh latest channel
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: latest
+          files: |
+            pdfviewer/latest/PdfViewer.apk
+            pdfviewer/latest/version.json
+          fail_on_unmatched_files: true
